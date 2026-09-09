@@ -14,7 +14,6 @@ import { SettingsModal } from './components/SettingsModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 import { 
-  BookOpen, 
   Search, 
   Brain, 
   Edit3, 
@@ -286,7 +285,7 @@ export const App: React.FC = () => {
 
           <div className="app-logo" onClick={() => setSidebarOpen(prev => !prev)}>
             <div className="app-logo-icon">
-              <BookOpen size={24} />
+              <img src="/icon-192.png" alt="SuriBibliya" style={{ width: 30, height: 30, borderRadius: 8, display: 'block' }} />
             </div>
             <span className="app-title">{t.appTitle}</span>
             <span className="app-badge">{t.badge}</span>

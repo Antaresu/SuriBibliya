@@ -1409,6 +1409,27 @@ body.theme-sapphire .voice-menu-dropdown {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes versePulse {
+  0% { background-color: transparent; }
+  20% { background-color: rgba(212, 175, 55, 0.28); border-radius: 8px; }
+  80% { background-color: rgba(212, 175, 55, 0.12); }
+  100% { background-color: transparent; }
+}
+
+.verse-pulse-highlight {
+  animation: versePulse 2.8s ease forwards;
+}
+
 .modal-header {
   padding: 18px 24px;
   border-bottom: 1px solid var(--border-subtle);

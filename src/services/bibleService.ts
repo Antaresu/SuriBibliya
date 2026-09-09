@@ -69,17 +69,25 @@ class BibleService {
     }
   }
 
+  // Preload search index in the background so searches are instant (<20ms)
+  async preloadSearchIndex(): Promise<void> {
+    if (this.searchIndex) return;
+    try {
+      const resp = await fetch('/bible_data/search_index.json');
+      if (resp.ok) {
+        this.searchIndex = await resp.json();
+      }
+    } catch (err) {
+      console.warn('Background search index preload deferred', err);
+    }
+  }
+
   // Universal Search across Tagalog & English
   async search(query: string, options?: { testament?: 'OT' | 'NT'; bookId?: number; translation?: 'all' | 'tgl' | 'en' }): Promise<Array<{ book: BookMetadata; c: number; v: number; tgl: string; en: string }>> {
     if (!query || query.trim().length < 2) return [];
     if (!this.searchIndex) {
-      try {
-        const resp = await fetch('/bible_data/search_index.json');
-        this.searchIndex = await resp.json();
-      } catch (err) {
-        console.error('Failed to load search index', err);
-        return [];
-      }
+      await this.preloadSearchIndex();
+      if (!this.searchIndex) return [];
     }
 
     const books = await this.getBooks();

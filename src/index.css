@@ -1577,6 +1577,211 @@ body.theme-sapphire .voice-menu-dropdown {
   background: var(--accent-gold-glow);
 }
 
+/* =========================================================
+   Search Modal Architecture
+   ========================================================= */
+.search-modal-overlay {
+  z-index: 2500;
+}
+
+.search-modal-card {
+  max-width: 680px;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-mobile-back-btn {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--accent-gold);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.search-mobile-back-btn:active {
+  background: var(--accent-gold-glow);
+}
+
+.search-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.search-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+.search-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.search-filter-label {
+  color: var(--text-gold);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.search-filter-label-muted {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.search-filter-divider {
+  color: var(--border-subtle);
+  font-size: 0.85rem;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.search-results-container {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 20px;
+  min-height: 0;
+}
+
+.search-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  text-align: center;
+  gap: 12px;
+}
+.search-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(212, 175, 55, 0.2);
+  border-top-color: var(--accent-gold);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.search-results-count-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+.search-result-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.search-result-card:hover {
+  border-color: var(--border-medium);
+}
+.search-result-badge {
+  font-size: 0.72rem;
+  color: var(--accent-gold);
+  background: var(--accent-gold-glow);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.search-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 16px;
+}
+.search-empty-icon-box {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--accent-gold-glow);
+  color: var(--accent-gold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.search-initial-dashboard {
+  padding: 8px 4px;
+}
+.search-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.search-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-gold);
+  margin-bottom: 10px;
+}
+
+.search-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.search-quick-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.search-quick-chip:hover,
+.search-quick-chip:active {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  background: var(--accent-gold-glow);
+}
+.search-quick-chip.verse-chip {
+  border-color: rgba(212, 175, 55, 0.35);
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+.search-quick-chip.topic-chip {
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
 .mobile-bottom-nav {
   display: none;
 }
@@ -1768,12 +1973,16 @@ body.theme-sapphire .voice-menu-dropdown {
     z-index: 2500 !important;
     padding: 0 !important;
     background: rgba(0, 0, 0, 0.8) !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
   }
   .modal-card {
     width: 100vw !important;
     max-width: 100vw !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
     border-radius: 0 !important;
     border: none !important;
     margin: 0 !important;
@@ -1788,7 +1997,45 @@ body.theme-sapphire .voice-menu-dropdown {
     -webkit-overflow-scrolling: touch;
   }
 
-  /* 10. Maximized Full-Screen Note Writing Studio on Mobile */
+  /* 10. Search Modal on Mobile / Soft Keyboard Responsive */
+  .search-mobile-back-btn {
+    display: flex !important;
+  }
+  .hide-on-mobile {
+    display: none !important;
+  }
+  .search-modal-overlay {
+    padding: 0 !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+  }
+  .search-modal-card {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: var(--bg-surface) !important;
+  }
+  .search-header-bar {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+  .search-filter-bar {
+    padding: 8px 12px !important;
+    gap: 6px !important;
+  }
+  .search-results-container {
+    padding: 12px 12px 80px 12px !important;
+  }
+
+  /* 11. Maximized Full-Screen Note Writing Studio on Mobile */
   .journal-modal-overlay {
     z-index: 3000 !important;
     padding: 0 !important;
@@ -1796,8 +2043,10 @@ body.theme-sapphire .voice-menu-dropdown {
   .journal-maximized-modal {
     width: 100vw !important;
     max-width: 100vw !important;
-    height: 100vh !important;
-    max-height: 100vh !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
     border-radius: 0 !important;
     border: none !important;
   }

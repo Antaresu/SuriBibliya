@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BookMetadata } from '../types/bible';
 import { bibleService } from '../services/bibleService';
-import { Search, X, Globe } from 'lucide-react';
-
+import { Search, X, Globe, ChevronLeft, Sparkles, BookOpen } from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
 interface SearchModalProps {
@@ -13,6 +12,29 @@ interface SearchModalProps {
   onClose: () => void;
   onSelectVerse: (book: BookMetadata, chapter: number, verse: number) => void;
 }
+
+const QUICK_VERSES = [
+  'Juan 3:16',
+  'Awit 23:1',
+  'Roma 8:28',
+  'Filipos 4:13',
+  'Genesis 1:1',
+  'Kawikaan 3:5',
+  '1 Corinto 13:4',
+  'Mateo 28:19',
+  'Santiago 1:5'
+];
+
+const QUICK_TOPICS = [
+  { tgl: 'Pag-ibig', en: 'Love' },
+  { tgl: 'Pananampalataya', en: 'Faith' },
+  { tgl: 'Biyaya', en: 'Grace' },
+  { tgl: 'Kapayapaan', en: 'Peace' },
+  { tgl: 'Kaligtasan', en: 'Salvation' },
+  { tgl: 'Karunungan', en: 'Wisdom' },
+  { tgl: 'Pag-asa', en: 'Hope' },
+  { tgl: 'Panalangin', en: 'Prayer' }
+];
 
 export const SearchModal: React.FC<SearchModalProps> = ({
   books,
@@ -31,13 +53,16 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
   const t = translations[lang] || translations.tl;
 
+  // Preload search index and focus input on open
   useEffect(() => {
     if (isOpen) {
+      bibleService.preloadSearchIndex();
       setSearchLang(initialLanguage);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 80);
     } else {
       setQuery('');
       setResults([]);
+      setIsSearching(false);
     }
   }, [isOpen, initialLanguage]);
 
@@ -45,6 +70,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   useEffect(() => {
     if (!query.trim() || query.trim().length < 2) {
       setResults([]);
+      setIsSearching(false);
       return;
     }
 
@@ -78,7 +104,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       });
       setResults(searchRes);
       setIsSearching(false);
-    }, 200);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [query, testament, searchLang, books]);
@@ -98,125 +124,169 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   };
 
   const getPlaceholder = () => {
-    if (searchLang === 'tgl') return "Maghanap sa Tagalog (hal. 'pag-ibig', 'pananampalataya', 'Roma 8:28')...";
-    if (searchLang === 'en') return "Search in English KJV (e.g. 'grace', 'faith', 'Romans 8:28')...";
-    return "Maghanap sa Tagalog at English (hal. 'biyaya', 'grace', 'Juan 3:16')...";
+    if (searchLang === 'tgl') return "Maghanap sa Tagalog (hal. 'pag-ibig', 'Roma 8:28')...";
+    if (searchLang === 'en') return "Search in English KJV (e.g. 'grace', 'Romans 8:28')...";
+    return "Maghanap sa Tagalog at English (hal. 'biyaya', 'Juan 3:16')...";
+  };
+
+  const handleApplyQuickQuery = (term: string) => {
+    setQuery(term);
+    inputRef.current?.focus();
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', height: '80vh' }}>
-        {/* Search Input Bar */}
-        <div style={{
-          padding: '14px 20px',
+    <div className="modal-overlay search-modal-overlay" onClick={onClose}>
+      <div 
+        className="modal-card search-modal-card" 
+        onClick={e => e.stopPropagation()} 
+        style={{ maxWidth: '680px' }}
+      >
+        {/* Search Input Bar with Mobile Back Button */}
+        <div className="search-header-bar" style={{
+          padding: '12px 16px',
           borderBottom: '1px solid var(--border-subtle)',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
           background: 'var(--bg-card)'
         }}>
-          <Search size={20} className="text-gold" />
+          {/* Mobile Back Button - Thumb accessible */}
+          <button
+            type="button"
+            className="search-mobile-back-btn"
+            onClick={onClose}
+            aria-label="Bumalik sa Bibliya"
+            title="Bumalik sa Bibliya"
+          >
+            <ChevronLeft size={22} />
+            <span className="search-back-text">{lang === 'en' ? 'Back' : 'Bumalik'}</span>
+          </button>
+
+          <Search size={18} className="text-gold search-input-icon" />
+
           <input
             ref={inputRef}
-            type="text"
+            type="search"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck="false"
             placeholder={getPlaceholder()}
             value={query}
             onChange={e => setQuery(e.target.value)}
+            className="search-main-input"
             style={{
               flex: 1,
               background: 'transparent',
               border: 'none',
               color: 'var(--text-primary)',
-              fontSize: '1.02rem',
-              outline: 'none'
+              fontSize: '1rem',
+              outline: 'none',
+              minWidth: 0
             }}
           />
+
           {query && (
-            <button className="action-icon-btn" onClick={() => setQuery('')}>
+            <button 
+              type="button" 
+              className="action-icon-btn" 
+              onClick={() => {
+                setQuery('');
+                inputRef.current?.focus();
+              }}
+              title="I-clear ang hanap"
+              aria-label="I-clear"
+            >
               <X size={16} />
             </button>
           )}
-          <button className="modal-close-btn" onClick={onClose}>
+
+          <button 
+            type="button" 
+            className="modal-close-btn hide-on-mobile" 
+            onClick={onClose}
+            title="Isara"
+          >
             <X size={18} />
           </button>
         </div>
 
-        {/* Filter Controls Bar */}
-        <div style={{
-          padding: '8px 20px',
-          background: 'var(--bg-surface)',
-          borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontSize: '0.8rem'
-        }}>
-          {/* Language Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ color: 'var(--text-gold)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+        {/* Filter Controls Bar - Smooth Horizontal Scrolling Chips (No line wrapping) */}
+        <div className="search-filter-bar">
+          {/* Language Selector Chips */}
+          <div className="search-filter-group">
+            <span className="search-filter-label">
               <Globe size={13} />
               <span>{t.searchLangLabel}</span>
             </span>
             <button 
+              type="button"
               className={`testament-tab ${searchLang === 'tgl' ? 'active' : ''}`}
-              style={{ padding: '3px 9px', fontSize: '0.75rem' }}
               onClick={() => setSearchLang('tgl')}
             >
               {t.tagalogAdb}
             </button>
             <button 
+              type="button"
               className={`testament-tab ${searchLang === 'en' ? 'active' : ''}`}
-              style={{ padding: '3px 9px', fontSize: '0.75rem' }}
               onClick={() => setSearchLang('en')}
             >
               {t.englishKjv}
             </button>
             <button 
+              type="button"
               className={`testament-tab ${searchLang === 'all' ? 'active' : ''}`}
-              style={{ padding: '3px 9px', fontSize: '0.75rem' }}
               onClick={() => setSearchLang('all')}
             >
               {t.bothLanguages}
             </button>
           </div>
 
-          {/* Testament Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ color: 'var(--text-muted)' }}>{t.testamentLabel}</span>
+          <span className="search-filter-divider">|</span>
+
+          {/* Testament Selector Chips */}
+          <div className="search-filter-group">
+            <span className="search-filter-label-muted">{t.testamentLabel}</span>
             <button 
+              type="button"
               className={`testament-tab ${testament === 'ALL' ? 'active' : ''}`}
-              style={{ padding: '3px 8px', fontSize: '0.75rem' }}
               onClick={() => setTestament('ALL')}
             >
               {lang === 'en' ? 'All' : 'Lahat'}
             </button>
             <button 
+              type="button"
               className={`testament-tab ${testament === 'OT' ? 'active' : ''}`}
-              style={{ padding: '3px 8px', fontSize: '0.75rem' }}
               onClick={() => setTestament('OT')}
             >
-              OT
+              OT (Lumang Tipan)
             </button>
             <button 
+              type="button"
               className={`testament-tab ${testament === 'NT' ? 'active' : ''}`}
-              style={{ padding: '3px 8px', fontSize: '0.75rem' }}
               onClick={() => setTestament('NT')}
             >
-              NT
+              NT (Bagong Tipan)
             </button>
           </div>
         </div>
 
         {/* Results Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        <div className="search-results-container">
           {isSearching ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-              {t.searchingInVerses}
+            <div className="search-loading-state">
+              <div className="search-spinner" />
+              <div style={{ fontSize: '0.92rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                {t.searchingInVerses}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {lang === 'en' ? 'Filtering through 31,296 verses...' : 'Naglilibot sa buong Lumang at Bagong Tipan...'}
+              </div>
             </div>
           ) : results.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                {t.foundResults}: {results.length} ({query}):
+            <div className="search-results-list">
+              <div className="search-results-count-bar">
+                <span>{t.foundResults}: <strong style={{ color: 'var(--accent-gold)' }}>{results.length}</strong></span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>"{query}"</span>
               </div>
               {results.map((res, idx) => {
                 const bookTitle = lang === 'en' ? res.book.name : res.book.tagalog;
@@ -225,26 +295,17 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                 return (
                   <div
                     key={idx}
+                    className="search-result-card"
                     onClick={() => {
                       onSelectVerse(res.book, res.c, res.v);
                       onClose();
                     }}
-                    style={{
-                      background: 'var(--bg-card)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '12px 16px',
-                      border: '1px solid var(--border-subtle)',
-                      cursor: 'pointer',
-                      transition: 'border-color 0.15s, background-color 0.15s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-medium)'}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-subtle)'}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <div style={{ fontWeight: 700, color: 'var(--accent-gold)', fontSize: '0.92rem' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--accent-gold)', fontSize: '0.94rem' }}>
                         {bookTitle} {res.c}:{res.v} <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }}>({altTitle})</span>
                       </div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lang === 'en' ? 'Click to open' : 'Pindutin para buksan'}</span>
+                      <span className="search-result-badge">{lang === 'en' ? 'Open' : 'Buksan'}</span>
                     </div>
 
                     {res.tgl && (
@@ -264,16 +325,99 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                 );
               })}
             </div>
-          ) : query ? (
-            <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-              {t.noResultsFor} "{query}". {lang === 'en' ? 'Try changing language filter or verify spelling.' : 'Subukang baguhin ang wika o i-check ang spelling.'}
+          ) : query.trim().length >= 2 ? (
+            /* Clear Empty State when No Verses Matched */
+            <div className="search-empty-state">
+              <div className="search-empty-icon-box">
+                <Search size={32} />
+              </div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                {t.noResultsFor} "{query}"
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: '360px', margin: '0 auto 16px auto', lineHeight: 1.5 }}>
+                {lang === 'en'
+                  ? 'No matching scripture verses found. Check spelling, try another word, or switch language to "Both".'
+                  : 'Walang talatang tumugma. Pakisuri ang baybay o subukang piliin ang "Lahat" sa wika at tipan.'}
+              </p>
+
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ padding: '8px 18px', fontSize: '0.82rem', marginBottom: '20px' }}
+                onClick={() => {
+                  setQuery('');
+                  inputRef.current?.focus();
+                }}
+              >
+                {lang === 'en' ? 'Clear Search' : 'I-clear ang Search'}
+              </button>
+
+              <div className="search-suggestions-box">
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-gold)', fontWeight: 600, marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                  <Sparkles size={14} />
+                  <span>{lang === 'en' ? 'Try searching these:' : 'Maaari mong subukan:'}</span>
+                </div>
+                <div className="search-chips-wrap">
+                  {['Juan 3:16', 'Roma 8:28', 'Pag-ibig', 'Biyaya', 'Pananampalataya'].map((item, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="search-quick-chip"
+                      onClick={() => handleApplyQuickQuery(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
-            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                {searchLang === 'tgl' ? 'Paghahanap sa Tagalog (ADB)' : searchLang === 'en' ? 'English Verse Search (KJV)' : 'Bilingual Scripture Search'}
+            /* Initial Rich Guidance Dashboard when Search Opens */
+            <div className="search-initial-dashboard">
+              {/* Popular Verse References */}
+              <div className="search-section">
+                <div className="search-section-header">
+                  <BookOpen size={15} className="text-gold" />
+                  <span>{lang === 'en' ? 'Popular Scripture Verses' : 'Mga Kilalang Talata'}</span>
+                </div>
+                <div className="search-chips-wrap">
+                  {QUICK_VERSES.map((ref, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="search-quick-chip verse-chip"
+                      onClick={() => handleApplyQuickQuery(ref)}
+                    >
+                      {ref}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div style={{ fontSize: '0.82rem', maxWidth: '420px', margin: '0 auto', lineHeight: 1.6 }}>
+
+              {/* Popular Topics */}
+              <div className="search-section" style={{ marginTop: '16px' }}>
+                <div className="search-section-header">
+                  <Sparkles size={15} className="text-gold" />
+                  <span>{lang === 'en' ? 'Key Biblical Topics' : 'Mga Mahahalagang Paksa'}</span>
+                </div>
+                <div className="search-chips-wrap">
+                  {QUICK_TOPICS.map((topic, i) => {
+                    const label = lang === 'en' ? topic.en : topic.tgl;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        className="search-quick-chip topic-chip"
+                        onClick={() => handleApplyQuickQuery(label)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 {t.searchHints}
               </div>
             </div>

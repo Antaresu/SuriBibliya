@@ -1,0 +1,9 @@
+{
+  "appId": "com.suribibliya.app",
+  "appName": "SuriBibliya",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

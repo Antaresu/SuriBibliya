@@ -20,8 +20,12 @@ import {
   Smartphone,
   Download,
   ExternalLink,
-  ChevronLeft
+  ChevronLeft,
+  Database,
+  Upload,
+  Check
 } from 'lucide-react';
+import { notesService } from '../services/notesService';
 import { AppTheme } from '../types/bible';
 import { translations, AppLanguage } from '../services/i18n';
 
@@ -38,13 +42,15 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveSettings: (settings: Partial<UserSettings>) => void;
+  onReloadData?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   isOpen,
   onClose,
-  onSaveSettings
+  onSaveSettings,
+  onReloadData
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'guide'>('general');
   const [apiKey, setApiKey] = useState(settings.geminiApiKey || '');
@@ -55,6 +61,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [appLang, setAppLang] = useState<AppLanguage>(settings.appLanguage || 'tl');
   const [savedApiKeySuccess, setSavedApiKeySuccess] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [saveDatMsg, setSaveDatMsg] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -520,6 +528,127 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ? 'Tip: In Chrome or Edge on Android, tap the 3 dots menu (⋮) at top right -> "Install App" or "Add to Home screen".' 
                     : 'Paalala: Sa Chrome o Edge sa iyong Android phone, pindutin ang 3 tuldok (⋮) sa kanang itaas -> "Idagdag sa Home screen" o "I-install ang App".'}
                 </div>
+              </div>
+
+              {/* Data Persistence & save.dat Backup */}
+              <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-gold)', fontWeight: 600, fontSize: '0.9rem' }}>
+                    <Database size={16} />
+                    <span>{appLang === 'en' ? 'Persistent Data & Backup (save.dat)' : 'Naka-save na Data at Backup (save.dat)'}</span>
+                  </div>
+                  <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: 'var(--radius-full)', fontWeight: 600 }}>
+                    Auto-Saved
+                  </span>
+                </div>
+                
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>
+                  {appLang === 'en'
+                    ? 'All your Bookmarks, Study Notes, and Highlights are automatically saved in phone storage. They persist across sessions and app updates. You can also download a save.dat backup file or restore it anytime!'
+                    : 'Awtomatikong nakaimbak ang lahat ng iyong mga Bookmark, Tala, at Highlight sa memory ng telepono. Mananatili ito kahit isara ang app o mag-update ng APK. Maaari ka ring mag-download ng backup (save.dat) upang hindi ito mawala kailanman!'}
+                </p>
+
+                {/* Live Storage Counts */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>
+                  <div style={{ background: 'var(--bg-input)', padding: '8px', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{appLang === 'en' ? 'Notes' : 'Mga Tala'}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-gold)' }}>{notesService.getNotes().length}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-input)', padding: '8px', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{appLang === 'en' ? 'Bookmarks' : 'Mga Bookmark'}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-gold)' }}>{notesService.getBookmarks().length}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-input)', padding: '8px', borderRadius: 'var(--radius-sm)', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{appLang === 'en' ? 'Highlights' : 'Highlights'}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-gold)' }}>{Object.keys(notesService.getHighlights()).length}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      notesService.downloadSaveDat();
+                      setSaveDatMsg(appLang === 'en' ? 'save.dat downloaded successfully!' : 'Matagumpay na na-download ang save.dat!');
+                      setTimeout(() => setSaveDatMsg(null), 3500);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'var(--accent-gold)',
+                      color: '#080a0e',
+                      border: 'none',
+                      padding: '8px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Download size={14} />
+                    <span>{appLang === 'en' ? 'Download Backup (save.dat)' : 'I-download ang Backup (save.dat)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'var(--bg-input)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-medium)',
+                      padding: '8px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Upload size={14} />
+                    <span>{appLang === 'en' ? 'Restore from save.dat' : 'I-restore mula sa save.dat'}</span>
+                  </button>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".dat,.json,text/plain"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = async (ev) => {
+                        const content = ev.target?.result as string;
+                        if (content) {
+                          const res = await notesService.importSaveDat(content);
+                          if (res.success) {
+                            if (onReloadData) onReloadData();
+                            setSaveDatMsg(
+                              appLang === 'en'
+                                ? `Data restored! (${res.notesCount} notes, ${res.bookmarksCount} bookmarks, ${res.highlightsCount} highlights)`
+                                : `Naibalik ang Data! (${res.notesCount} tala, ${res.bookmarksCount} bookmark, ${res.highlightsCount} highlight)`
+                            );
+                            setTimeout(() => setSaveDatMsg(null), 4000);
+                          } else {
+                            alert(res.error || 'Hindi mabasa ang save.dat file.');
+                          }
+                        }
+                      };
+                      reader.readAsText(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
+
+                {saveDatMsg && (
+                  <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Check size={15} />
+                    <span>{saveDatMsg}</span>
+                  </div>
+                )}
               </div>
 
               {/* Creator & Developer Profile (Created by: Antero Salamanca) */}

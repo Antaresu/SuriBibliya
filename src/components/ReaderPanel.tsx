@@ -176,6 +176,7 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
             verses={verses}
             activeVerseIndex={selectedVerse ? selectedVerse.v - 1 : 0}
             lang={lang}
+            currentTranslation={viewMode === 'single' ? activeSingleTranslation : 'adb'}
             onVerseChange={(idx) => onSelectVerse(verses[idx])}
           />
 

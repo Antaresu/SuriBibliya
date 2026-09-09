@@ -239,6 +239,17 @@ export const App: React.FC = () => {
     setBookmarks(notesService.getBookmarks());
   };
 
+  const handleDeleteBookmark = (verseKey: string) => {
+    notesService.deleteBookmark(verseKey);
+    setBookmarks(notesService.getBookmarks());
+  };
+
+  const handleReloadData = () => {
+    setHighlights(notesService.getHighlights());
+    setBookmarks(notesService.getBookmarks());
+    setSettings(notesService.getSettings());
+  };
+
   const handleSaveSettings = (newSettings: Partial<UserSettings>) => {
     const updated = notesService.saveSettings(newSettings);
     setSettings(updated);
@@ -391,6 +402,8 @@ export const App: React.FC = () => {
           onNavigateToVerse={handleSelectPassage}
           onSetHighlight={handleHighlight}
           onToggleBookmark={handleToggleBookmark}
+          onDeleteBookmark={handleDeleteBookmark}
+          onReloadData={handleReloadData}
           onComposingChange={setIsComposingNote}
         />
 
@@ -519,6 +532,7 @@ export const App: React.FC = () => {
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
         onSaveSettings={handleSaveSettings}
+        onReloadData={handleReloadData}
       />
 
       {/* Mobile / Android Bottom Navigation Bar */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StudyNote, Verse, BookMetadata, Highlight, Bookmark } from '../types/bible';
 import { notesService } from '../services/notesService';
 import { bibleService } from '../services/bibleService';
@@ -17,7 +17,10 @@ import {
   BookOpen,
   ArrowRight,
   Quote,
-  ChevronLeft
+  ChevronLeft,
+  Database,
+  Upload,
+  Check
 } from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
@@ -34,6 +37,8 @@ interface NotesDrawerProps {
   onNavigateToVerse: (book: BookMetadata, chapter: number, verseNum?: number) => void;
   onSetHighlight: (verseKey: string, color: string | null) => void;
   onToggleBookmark: (verse: Verse) => void;
+  onDeleteBookmark?: (verseKey: string) => void;
+  onReloadData?: () => void;
   onComposingChange?: (composing: boolean) => void;
 }
 
@@ -58,10 +63,14 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
   onNavigateToVerse,
   onSetHighlight,
   onToggleBookmark,
+  onDeleteBookmark,
+  onReloadData,
   onComposingChange
 }) => {
   const [activeTab, setActiveTab] = useState<'notes' | 'bookmarks' | 'highlights'>('notes');
   const [notes, setNotes] = useState<StudyNote[]>([]);
+  const [saveDatSuccess, setSaveDatSuccess] = useState<string | null>(null);
+  const saveDatInputRef = useRef<HTMLInputElement>(null);
   
   // Note Editor State
   const [isComposing, setIsComposing] = useState(false);
@@ -312,6 +321,47 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
     setTimeout(() => setCopiedExport(false), 2000);
   };
 
+  const handleDownloadSaveDat = () => {
+    notesService.downloadSaveDat();
+    setSaveDatSuccess(lang === 'en' ? 'save.dat downloaded!' : 'Na-download ang save.dat!');
+    setTimeout(() => setSaveDatSuccess(null), 3000);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        const res = await notesService.importSaveDat(text);
+        if (res.success) {
+          loadNotes();
+          if (onReloadData) onReloadData();
+          setSaveDatSuccess(
+            lang === 'en'
+              ? `Restored! (${res.notesCount} notes, ${res.bookmarksCount} bookmarks)`
+              : `Na-restore! (${res.notesCount} tala, ${res.bookmarksCount} bookmark)`
+          );
+        } else {
+          alert(res.error || 'Hindi mabasa ang save.dat file.');
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveBookmark = (verseKey: string) => {
+    notesService.deleteBookmark(verseKey);
+    if (onDeleteBookmark) {
+      onDeleteBookmark(verseKey);
+    }
+    if (onReloadData) {
+      onReloadData();
+    }
+  };
+
   // Helper to parse scripture references in text and render them as interactive verse boxes
   const renderTextWithVerseBoxes = (text: string) => {
     if (!text) return null;
@@ -417,8 +467,8 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
               ========================================================= */}
           {activeTab === 'notes' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Top Action Bar: Create Note Button & Export */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              {/* Top Action Bar: Create Note Button, Export & Save.dat Backup */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={handleStartCreate}
                   className="create-note-primary-btn"
@@ -428,16 +478,57 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
                   <span>{lang === 'en' ? 'Create Note' : 'Lumikha ng Tala'}</span>
                 </button>
 
-                <button
-                  onClick={handleExportMarkdown}
-                  className="action-icon-btn"
-                  title="Export notes to Markdown file"
-                  style={{ width: 'auto', padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontSize: '0.74rem', gap: '4px', background: 'var(--bg-card)' }}
-                >
-                  <Download size={13} />
-                  <span>{copiedExport ? t.exportedSuccess : t.exportMarkdown}</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* Save.dat Download Backup */}
+                  <button
+                    onClick={handleDownloadSaveDat}
+                    className="action-icon-btn"
+                    title={lang === 'en' ? 'Download Backup (save.dat)' : 'I-download ang Backup (save.dat)'}
+                    style={{ width: 'auto', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.72rem', gap: '4px', background: 'var(--bg-card)', color: 'var(--accent-gold)' }}
+                  >
+                    <Database size={13} />
+                    <span>save.dat</span>
+                  </button>
+
+                  {/* Save.dat Restore */}
+                  <button
+                    onClick={() => saveDatInputRef.current?.click()}
+                    className="action-icon-btn"
+                    title={lang === 'en' ? 'Restore data from save.dat' : 'I-restore mula sa save.dat'}
+                    style={{ width: 'auto', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.72rem', gap: '4px', background: 'var(--bg-card)' }}
+                  >
+                    <Upload size={13} />
+                    <span>Restore</span>
+                  </button>
+
+                  {/* Hidden File Input for save.dat */}
+                  <input
+                    ref={saveDatInputRef}
+                    type="file"
+                    accept=".dat,.json,text/plain"
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                  />
+
+                  {/* Export Markdown */}
+                  <button
+                    onClick={handleExportMarkdown}
+                    className="action-icon-btn"
+                    title="Export notes to Markdown file"
+                    style={{ width: 'auto', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.72rem', gap: '4px', background: 'var(--bg-card)' }}
+                  >
+                    <Download size={13} />
+                    <span>{copiedExport ? t.exportedSuccess : '.md'}</span>
+                  </button>
+                </div>
               </div>
+
+              {saveDatSuccess && (
+                <div style={{ padding: '6px 12px', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', borderRadius: 'var(--radius-sm)', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Check size={14} />
+                  <span>{saveDatSuccess}</span>
+                </div>
+              )}
 
               {/* In-Drawer Note Composer (When Composing and NOT Maximized) */}
               {isComposing && !isMaximized && (
@@ -846,9 +937,7 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
                           className="action-icon-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (targetBook) {
-                              onToggleBookmark({ v: bm.verse } as any);
-                            }
+                            handleRemoveBookmark(bm.verseKey);
                           }}
                           title={lang === 'en' ? 'Remove Bookmark' : 'Alisin ang Bookmark'}
                           style={{ width: '24px', height: '24px' }}

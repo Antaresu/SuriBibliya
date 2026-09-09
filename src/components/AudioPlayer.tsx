@@ -33,6 +33,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const activeChunksRef = useRef<string[]>([]);
   const chunkIndexRef = useRef<number>(0);
   const currentVerseIdxRef = useRef<number>(activeVerseIndex);
+  const resumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   currentVerseIdxRef.current = activeVerseIndex;
 
@@ -81,6 +82,12 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const stopAllAudio = () => {
     isPlayingRef.current = false;
+
+    // Clear Android resume keep-alive
+    if (resumeIntervalRef.current) {
+      clearInterval(resumeIntervalRef.current);
+      resumeIntervalRef.current = null;
+    }
 
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -137,7 +144,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     return chunks.length > 0 ? chunks : [clean];
   };
 
-  // Play natural Filipino audio chunk via local Vite proxy /api/tts
+  // Play natural Filipino audio chunk via local Vite proxy /api/tts (dev only)
+  // On Android Capacitor APK, falls through to SpeechSynthesis immediately
   const playFilipinoChunk = (verseIdx: number) => {
     if (!isPlayingRef.current) return;
 
@@ -150,6 +158,17 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         isPlayingRef.current = false;
         setIsPlaying(false);
       }
+      return;
+    }
+
+    // Detect Capacitor (APK) vs Vite dev server
+    const isCapacitor = typeof (window as any).Capacitor !== 'undefined'
+      || window.location.protocol === 'capacitor:'
+      || window.location.hostname === 'localhost' && !window.location.port;
+
+    if (isCapacitor) {
+      // On APK, use SpeechSynthesis directly (no dev proxy)
+      playViaSpeechSynth(verseIdx);
       return;
     }
 
@@ -185,12 +204,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     });
   };
 
-  // Fallback to SpeechSynthesis
+  // Fallback to SpeechSynthesis with Android pausing-bug workaround
   const playViaSpeechSynth = (index: number) => {
     if (!isPlayingRef.current || !synthRef.current || index >= verses.length) {
       isPlayingRef.current = false;
       setIsPlaying(false);
       return;
+    }
+
+    // Clear any previous keep-alive
+    if (resumeIntervalRef.current) {
+      clearInterval(resumeIntervalRef.current);
+      resumeIntervalRef.current = null;
     }
 
     synthRef.current.cancel();
@@ -204,15 +229,32 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (matched) {
       utterance.voice = matched;
     } else {
-      const filVoice = availableVoices.find(v => 
+      // Auto-pick best available voice: prefer Filipino, then English, then first
+      const filVoice = availableVoices.find(v =>
         v.lang.startsWith('fil') || v.lang.startsWith('tl') || v.name.toLowerCase().includes('filipino')
       );
-      if (filVoice) utterance.voice = filVoice;
+      const enVoice = availableVoices.find(v => v.lang.startsWith('en'));
+      const fallback = filVoice || enVoice || availableVoices[0];
+      if (fallback) utterance.voice = fallback;
     }
 
     utterance.lang = 'fil-PH';
 
+    utterance.onstart = () => {
+      // Android WebView bug: speechSynthesis randomly pauses — keep it alive
+      if (resumeIntervalRef.current) clearInterval(resumeIntervalRef.current);
+      resumeIntervalRef.current = setInterval(() => {
+        if (synthRef.current && synthRef.current.paused && isPlayingRef.current) {
+          synthRef.current.resume();
+        }
+      }, 14000);
+    };
+
     utterance.onend = () => {
+      if (resumeIntervalRef.current) {
+        clearInterval(resumeIntervalRef.current);
+        resumeIntervalRef.current = null;
+      }
       if (!isPlayingRef.current) return;
       if (index + 1 < verses.length) {
         onVerseChange(index + 1);
@@ -224,6 +266,10 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     };
 
     utterance.onerror = (e: any) => {
+      if (resumeIntervalRef.current) {
+        clearInterval(resumeIntervalRef.current);
+        resumeIntervalRef.current = null;
+      }
       if (!isPlayingRef.current || e.error === 'canceled' || e.error === 'interrupted') {
         return;
       }

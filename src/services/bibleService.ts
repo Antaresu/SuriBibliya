@@ -92,7 +92,12 @@ class BibleService {
 
     const books = await this.getBooks();
     const booksMap = new Map(books.map(b => [b.id, b]));
-    const q = query.trim().toLowerCase();
+
+    // Normalize accents so 'ama' finds 'amá', 'umibig' finds 'umibíg'
+    const normalize = (str: string) =>
+      str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    const q = normalize(query.trim());
     const trans = options?.translation || 'all';
 
     const results: Array<{ book: BookMetadata; c: number; v: number; tgl: string; en: string }> = [];
@@ -106,10 +111,10 @@ class BibleService {
 
       let matched = false;
       if (trans === 'all' || trans === 'tgl') {
-        if (item.tgl && item.tgl.toLowerCase().includes(q)) matched = true;
+        if (item.tgl && normalize(item.tgl).includes(q)) matched = true;
       }
       if (!matched && (trans === 'all' || trans === 'en')) {
-        if (item.en && item.en.toLowerCase().includes(q)) matched = true;
+        if (item.en && normalize(item.en).includes(q)) matched = true;
       }
 
       if (matched) {

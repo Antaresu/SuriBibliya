@@ -131,6 +131,7 @@ body.theme-sapphire,
 button, input, select, textarea {
   outline: none !important;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 button:focus, button:focus-visible,

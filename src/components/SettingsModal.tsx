@@ -19,7 +19,8 @@ import {
   Layers,
   Smartphone,
   Download,
-  ExternalLink
+  ExternalLink,
+  ChevronLeft
 } from 'lucide-react';
 import { AppTheme } from '../types/bible';
 import { translations, AppLanguage } from '../services/i18n';
@@ -134,12 +135,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: activeTab === 'guide' ? '680px' : '540px', transition: 'max-width 0.25s ease' }}>
         {/* Modal Header */}
         <div className="modal-header">
+          <button 
+            type="button"
+            className="modal-back-btn" 
+            onClick={onClose} 
+            title={appLang === 'en' ? 'Back to Bible reading' : 'Bumalik sa Pagbasa ng Bibliya'}
+          >
+            <ChevronLeft size={20} />
+            <span>{appLang === 'en' ? 'Back' : 'Bumalik'}</span>
+          </button>
+
           <div className="modal-title">
             <Settings size={20} className="text-gold" />
             <span>{t.settingsTitle}</span>
           </div>
-          <button className="modal-close-btn" onClick={onClose} title={t.close}>
-            <X size={18} />
+
+          <button type="button" className="modal-close-btn" onClick={onClose} title={t.close}>
+            <X size={20} />
           </button>
         </div>
 
@@ -743,6 +755,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Prominent Dismiss Button for mobile and desktop */}
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="save-note-btn"
+              style={{
+                width: '100%',
+                padding: '13px',
+                fontSize: '0.92rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: 'var(--shadow-md)',
+                cursor: 'pointer'
+              }}
+            >
+              <BookOpen size={18} />
+              <span>{appLang === 'en' ? 'Close & Return to Bible Reading' : 'Isara at Bumalik sa Pagbasa ng Bibliya'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

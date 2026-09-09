@@ -9,8 +9,8 @@ interface MobileBottomNavProps {
   onOpenLogic: () => void;
   onOpenSettings: () => void;
   lang?: AppLanguage;
-  isNotesOpen: boolean;
-  isLogicOpen: boolean;
+  activeTab: 'bible' | 'search' | 'notes' | 'logic' | 'settings';
+  isHidden?: boolean;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
@@ -20,26 +20,28 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onOpenLogic,
   onOpenSettings,
   lang = 'tl',
-  isNotesOpen,
-  isLogicOpen
+  activeTab,
+  isHidden = false
 }) => {
+  if (isHidden) return null;
+
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile Navigation Bar">
-      {/* 1. Books / Scripture Passage */}
+      {/* 1. Books / Scripture Passage (Bibliya) */}
       <button
         type="button"
-        className="mobile-nav-item"
+        className={`mobile-nav-item ${activeTab === 'bible' ? 'active' : ''}`}
         onClick={onOpenBooks}
-        title={lang === 'en' ? 'Books & Chapters' : 'Mga Aklat at Kabanata'}
+        title={lang === 'en' ? 'Bible Reading & Books' : 'Pagbasa ng Bibliya at Mga Aklat'}
       >
         <BookOpen size={20} />
         <span>{lang === 'en' ? 'Bible' : 'Bibliya'}</span>
       </button>
 
-      {/* 2. Global Search */}
+      {/* 2. Global Search (Hanap) */}
       <button
         type="button"
-        className="mobile-nav-item"
+        className={`mobile-nav-item ${activeTab === 'search' ? 'active' : ''}`}
         onClick={onOpenSearch}
         title={lang === 'en' ? 'Search Scripture' : 'Maghanap ng Talata'}
       >
@@ -47,10 +49,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span>{lang === 'en' ? 'Search' : 'Hanap'}</span>
       </button>
 
-      {/* 3. Notes & Journal */}
+      {/* 3. Notes & Journal (Mga Tala) */}
       <button
         type="button"
-        className={`mobile-nav-item ${isNotesOpen ? 'active' : ''}`}
+        className={`mobile-nav-item ${activeTab === 'notes' ? 'active' : ''}`}
         onClick={onOpenNotes}
         title={lang === 'en' ? 'Study Notes & Journal' : 'Mga Tala at Journal'}
       >
@@ -58,21 +60,21 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         <span>{lang === 'en' ? 'Notes' : 'Mga Tala'}</span>
       </button>
 
-      {/* 4. Logic & Exegesis Inspector (Brain) */}
+      {/* 4. Logic & Exegesis Inspector (Lohika) */}
       <button
         type="button"
-        className={`mobile-nav-item ${isLogicOpen ? 'active' : ''}`}
+        className={`mobile-nav-item ${activeTab === 'logic' ? 'active' : ''}`}
         onClick={onOpenLogic}
         title={lang === 'en' ? 'Logic & Exegesis' : 'Lohika at Suri'}
       >
         <Brain size={20} />
-        <span>{lang === 'en' ? 'Exegesis' : 'Lohika'}</span>
+        <span>{lang === 'en' ? 'Logic' : 'Lohika'}</span>
       </button>
 
-      {/* 5. Settings Modal */}
+      {/* 5. Settings Modal (Setting) */}
       <button
         type="button"
-        className="mobile-nav-item"
+        className={`mobile-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
         onClick={onOpenSettings}
         title={lang === 'en' ? 'Settings' : 'Mga Setting'}
       >

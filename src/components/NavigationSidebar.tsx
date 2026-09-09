@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { BookMetadata } from '../types/bible';
-import { Book, ChevronRight, X, Search, Layers } from 'lucide-react';
+import { Book, ChevronRight, ChevronLeft, X, Search, Layers } from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
 interface NavigationSidebarProps {
@@ -71,7 +71,12 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   }, [filteredBooks, lang]);
 
   const handleBookClick = (book: BookMetadata) => {
-    setActiveBookForChapterModal(book);
+    if (book.chapters === 1) {
+      onSelectPassage(book, 1);
+      onCloseMobile();
+    } else {
+      setActiveBookForChapterModal(book);
+    }
   };
 
   const handleChapterClick = (chapter: number) => {
@@ -87,6 +92,15 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
       <aside className={`sidebar-drawer ${isOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <button
+              type="button"
+              className="modal-back-btn"
+              onClick={onCloseMobile}
+              title={lang === 'en' ? 'Back to Bible reading' : 'Bumalik sa Pagbasa ng Bibliya'}
+            >
+              <ChevronLeft size={20} />
+              <span>{lang === 'en' ? 'Back' : 'Bumalik'}</span>
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-gold)', fontWeight: 700, fontSize: '0.9rem' }}>
               <Book size={18} />
               <span>{t.booksTitle}</span>

@@ -24,7 +24,8 @@ import {
   Compass,
   Palette,
   BookMarked,
-  X
+  X,
+  ChevronLeft
 } from 'lucide-react';
 import { translations, AppLanguage } from './services/i18n';
 
@@ -38,12 +39,15 @@ export const App: React.FC = () => {
   // Drawers & Modals
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [notesDrawerOpen, setNotesDrawerOpen] = useState<boolean>(false);
-  const [inspectorOpen, setInspectorOpen] = useState<boolean>(true);
+  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && window.innerWidth >= 1024;
+  });
   const [strongsKey, setStrongsKey] = useState<string | null>(null);
   const [isStrongsGreek, setIsStrongsGreek] = useState<boolean>(true);
   const [crossRefVerse, setCrossRefVerse] = useState<Verse | null>(null);
   const [searchModalOpen, setSearchModalOpen] = useState<boolean>(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
+  const [isComposingNote, setIsComposingNote] = useState<boolean>(false);
 
   // Settings & Storage
   const [settings, setSettings] = useState<UserSettings>(notesService.getSettings());
@@ -102,12 +106,82 @@ export const App: React.FC = () => {
   const handleSelectPassage = (book: BookMetadata, chapter: number, verseNum?: number) => {
     setSelectedBook(book);
     setSelectedChapter(chapter);
+    // On mobile, close all drawers and return directly to reading verses!
+    setSidebarOpen(false);
+    setNotesDrawerOpen(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setInspectorOpen(false);
+    }
+    setSettingsModalOpen(false);
+    setSearchModalOpen(false);
     if (verseNum) {
       setTimeout(() => {
         const elem = document.getElementById(`verse-${verseNum}`);
         elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 300);
     }
+  };
+
+  // Exclusive mobile navigation handlers ensuring ONLY ONE view is open at a time
+  const handleNavBooks = () => {
+    if (notesDrawerOpen || inspectorOpen || settingsModalOpen || searchModalOpen) {
+      // Close all overlays and return straight to Scripture verses
+      setNotesDrawerOpen(false);
+      setInspectorOpen(false);
+      setSettingsModalOpen(false);
+      setSearchModalOpen(false);
+      setSidebarOpen(false);
+    } else {
+      // Toggle book picker
+      setSidebarOpen(prev => !prev);
+    }
+  };
+
+  const handleNavSearch = () => {
+    setSearchModalOpen(true);
+    setSidebarOpen(false);
+    setNotesDrawerOpen(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) setInspectorOpen(false);
+    setSettingsModalOpen(false);
+  };
+
+  const handleNavNotes = () => {
+    setNotesDrawerOpen(prev => {
+      const next = !prev;
+      if (next) {
+        setSidebarOpen(false);
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) setInspectorOpen(false);
+        setSettingsModalOpen(false);
+        setSearchModalOpen(false);
+      }
+      return next;
+    });
+  };
+
+  const handleNavLogic = () => {
+    setInspectorOpen(prev => {
+      const next = !prev;
+      if (next) {
+        setSidebarOpen(false);
+        setNotesDrawerOpen(false);
+        setSettingsModalOpen(false);
+        setSearchModalOpen(false);
+      }
+      return next;
+    });
+  };
+
+  const handleNavSettings = () => {
+    setSettingsModalOpen(prev => {
+      const next = !prev;
+      if (next) {
+        setSidebarOpen(false);
+        setNotesDrawerOpen(false);
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) setInspectorOpen(false);
+        setSearchModalOpen(false);
+      }
+      return next;
+    });
   };
 
   const handlePrevChapter = () => {
@@ -309,6 +383,7 @@ export const App: React.FC = () => {
           onNavigateToVerse={handleSelectPassage}
           onSetHighlight={handleHighlight}
           onToggleBookmark={handleToggleBookmark}
+          onComposingChange={setIsComposingNote}
         />
 
         {/* Center Scripture Reader */}
@@ -333,11 +408,11 @@ export const App: React.FC = () => {
             }}
             onOpenNotes={(v) => {
               setSelectedVerse(v);
-              setNotesDrawerOpen(true);
+              handleNavNotes();
             }}
             onOpenLogic={(v) => {
               setSelectedVerse(v);
-              setInspectorOpen(true);
+              handleNavLogic();
             }}
             onSetHighlight={handleHighlight}
             onToggleBookmark={handleToggleBookmark}
@@ -350,6 +425,16 @@ export const App: React.FC = () => {
         {selectedBook && (
           <aside className={`inspector-panel ${inspectorOpen ? 'open' : 'collapsed'}`}>
             <div className="inspector-single-header">
+              <button 
+                type="button"
+                className="modal-back-btn" 
+                onClick={() => setInspectorOpen(false)}
+                title={currentLang === 'en' ? 'Back to Bible reading' : 'Bumalik sa Pagbasa ng Bibliya'}
+              >
+                <ChevronLeft size={20} />
+                <span>{currentLang === 'en' ? 'Back' : 'Bumalik'}</span>
+              </button>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Brain size={18} style={{ color: 'var(--accent-gold)' }} />
                 <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-gold)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -357,6 +442,7 @@ export const App: React.FC = () => {
                 </span>
               </div>
               <button 
+                type="button"
                 className="action-icon-btn" 
                 onClick={() => setInspectorOpen(false)}
                 title={t.close}
@@ -378,6 +464,18 @@ export const App: React.FC = () => {
               />
             </div>
           </aside>
+        )}
+
+        {/* Mobile Backdrop for Drawers */}
+        {(sidebarOpen || notesDrawerOpen || (inspectorOpen && typeof window !== 'undefined' && window.innerWidth < 1024)) && (
+          <div 
+            className="mobile-drawer-backdrop"
+            onClick={() => {
+              setSidebarOpen(false);
+              setNotesDrawerOpen(false);
+              setInspectorOpen(false);
+            }}
+          />
         )}
       </div>
 
@@ -417,14 +515,19 @@ export const App: React.FC = () => {
 
       {/* Mobile / Android Bottom Navigation Bar */}
       <MobileBottomNav
-        onOpenBooks={() => setSidebarOpen(prev => !prev)}
-        onOpenSearch={() => setSearchModalOpen(true)}
-        onOpenNotes={() => setNotesDrawerOpen(prev => !prev)}
-        onOpenLogic={() => setInspectorOpen(prev => !prev)}
-        onOpenSettings={() => setSettingsModalOpen(true)}
+        onOpenBooks={handleNavBooks}
+        onOpenSearch={handleNavSearch}
+        onOpenNotes={handleNavNotes}
+        onOpenLogic={handleNavLogic}
+        onOpenSettings={handleNavSettings}
         lang={currentLang}
-        isNotesOpen={notesDrawerOpen}
-        isLogicOpen={inspectorOpen}
+        activeTab={
+          settingsModalOpen ? 'settings' :
+          notesDrawerOpen ? 'notes' :
+          (inspectorOpen && typeof window !== 'undefined' && window.innerWidth < 1024) ? 'logic' :
+          'bible'
+        }
+        isHidden={isComposingNote}
       />
     </div>
   );

@@ -16,7 +16,8 @@ import {
   Search,
   BookOpen,
   ArrowRight,
-  Quote
+  Quote,
+  ChevronLeft
 } from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
@@ -33,6 +34,7 @@ interface NotesDrawerProps {
   onNavigateToVerse: (book: BookMetadata, chapter: number, verseNum?: number) => void;
   onSetHighlight: (verseKey: string, color: string | null) => void;
   onToggleBookmark: (verse: Verse) => void;
+  onComposingChange?: (composing: boolean) => void;
 }
 
 interface DetectedVerse {
@@ -55,7 +57,8 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
   bookmarks,
   onNavigateToVerse,
   onSetHighlight,
-  onToggleBookmark
+  onToggleBookmark,
+  onComposingChange
 }) => {
   const [activeTab, setActiveTab] = useState<'notes' | 'bookmarks' | 'highlights'>('notes');
   const [notes, setNotes] = useState<StudyNote[]>([]);
@@ -192,13 +195,25 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
     loadHighlightTexts();
   }, [isOpen, activeTab, highlights, books]);
 
+  const handleCloseComposer = () => {
+    setIsComposing(false);
+    setIsMaximized(false);
+    setEditingNoteId(null);
+    onComposingChange?.(false);
+  };
+
   const handleStartCreate = () => {
     setEditingNoteId(null);
     setNoteTitle(''); // Title stays empty for the writer to decide
     setNoteContent('');
     setNoteTags(lang === 'en' ? 'Reflection' : 'Pagninilay');
     setNoteColor('amber');
+    setDetectedVerse(null);
     setIsComposing(true);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMaximized(true);
+    }
+    onComposingChange?.(true);
   };
 
   const handleEditNote = (note: StudyNote) => {
@@ -208,6 +223,10 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
     setNoteTags(note.tags.join(', '));
     setNoteColor(note.color || 'amber');
     setIsComposing(true);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMaximized(true);
+    }
+    onComposingChange?.(true);
   };
 
   const handleSaveNote = () => {
@@ -239,9 +258,7 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
     });
 
     loadNotes();
-    setIsComposing(false);
-    setIsMaximized(false);
-    setEditingNoteId(null);
+    handleCloseComposer();
   };
 
   const handleDeleteNote = (id: string) => {
@@ -249,7 +266,7 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
       notesService.deleteNote(id);
       loadNotes();
       if (editingNoteId === id) {
-        setIsComposing(false);
+        handleCloseComposer();
       }
     }
   };
@@ -340,14 +357,24 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
       <aside className="journal-drawer open">
         {/* Drawer Header */}
         <div className="journal-header">
+          <button
+            type="button"
+            className="modal-back-btn"
+            onClick={onClose}
+            title={lang === 'en' ? 'Back to Bible reading' : 'Bumalik sa Pagbasa ng Bibliya'}
+          >
+            <ChevronLeft size={20} />
+            <span>{lang === 'en' ? 'Back' : 'Bumalik'}</span>
+          </button>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BookOpen size={20} className="text-gold" />
             <div>
               <div style={{ fontWeight: 700, color: 'var(--text-gold)', fontSize: '0.96rem' }}>
-                {lang === 'en' ? 'Study Journal & Collections' : 'Talaarawan at Koleksyon'}
+                {lang === 'en' ? 'Study Journal' : 'Talaarawan'}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                {lang === 'en' ? 'Notes • Bookmarks • Highlights' : 'Mga Tala • Mga Bookmark • Mga Highlight'}
+                {lang === 'en' ? 'Notes • Bookmarks' : 'Mga Tala at Bookmark'}
               </div>
             </div>
           </div>
@@ -965,26 +992,34 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
             {/* Maximized Header */}
             <div className="maximized-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="modal-back-btn"
+                  onClick={handleCloseComposer}
+                  title={lang === 'en' ? 'Back to notes' : 'Bumalik sa mga Tala'}
+                >
+                  <ChevronLeft size={20} />
+                  <span>{lang === 'en' ? 'Back' : 'Bumalik'}</span>
+                </button>
                 <Edit3 size={18} className="text-gold" />
                 <span style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-gold)' }}>
-                  {editingNoteId ? (lang === 'en' ? 'Edit Note' : 'I-edit ang Tala') : (lang === 'en' ? 'Full Study Studio' : 'Malawakang Sulatan ng Tala')}
+                  {editingNoteId ? (lang === 'en' ? 'Edit Note' : 'I-edit ang Tala') : (lang === 'en' ? 'Full Study Studio' : 'Sulatan ng Tala')}
                 </span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* Minimize Button */}
+                {/* Top Save button - Always reachable even with mobile keyboard open! */}
                 <button
-                  onClick={() => setIsMaximized(false)}
-                  className="action-icon-btn"
-                  title="I-minimize sa drawer"
+                  type="button"
+                  onClick={handleSaveNote}
+                  className="save-note-btn"
+                  style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: 700 }}
                 >
-                  <Minimize2 size={16} />
+                  {t.saveNote}
                 </button>
                 <button
-                  onClick={() => {
-                    setIsComposing(false);
-                    setIsMaximized(false);
-                  }}
+                  type="button"
+                  onClick={handleCloseComposer}
                   className="action-icon-btn"
                   title={t.close}
                 >

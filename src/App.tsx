@@ -117,7 +117,11 @@ export const App: React.FC = () => {
     if (verseNum) {
       setTimeout(() => {
         const elem = document.getElementById(`verse-${verseNum}`);
-        elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (elem) {
+          elem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          elem.classList.add('verse-pulse-highlight');
+          setTimeout(() => elem.classList.remove('verse-pulse-highlight'), 3000);
+        }
       }, 300);
     }
   };
@@ -138,11 +142,16 @@ export const App: React.FC = () => {
   };
 
   const handleNavSearch = () => {
-    setSearchModalOpen(true);
-    setSidebarOpen(false);
-    setNotesDrawerOpen(false);
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) setInspectorOpen(false);
-    setSettingsModalOpen(false);
+    setSearchModalOpen(prev => {
+      const next = !prev;
+      if (next) {
+        setSidebarOpen(false);
+        setNotesDrawerOpen(false);
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) setInspectorOpen(false);
+        setSettingsModalOpen(false);
+      }
+      return next;
+    });
   };
 
   const handleNavNotes = () => {

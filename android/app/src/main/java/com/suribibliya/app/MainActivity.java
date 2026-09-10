@@ -21,12 +21,16 @@ public class MainActivity extends BridgeActivity {
 
                     try {
                         int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+                        int statusBarTop = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout()).top;
+
                         float density = getResources().getDisplayMetrics().density;
                         int navBottomDp = density > 0 ? Math.round(navBottom / density) : navBottom;
+                        int notchTopDp = density > 0 ? Math.round(statusBarTop / density) : statusBarTop;
 
                         getBridge().getWebView().post(() -> {
                             getBridge().getWebView().evaluateJavascript(
-                                "document.documentElement.style.setProperty('--android-nav-bottom', '" + navBottomDp + "px');",
+                                "document.documentElement.style.setProperty('--android-nav-bottom', '" + navBottomDp + "px');" +
+                                "document.documentElement.style.setProperty('--android-notch-top', '" + notchTopDp + "px');",
                                 null
                             );
                         });

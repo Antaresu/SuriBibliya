@@ -20,7 +20,8 @@ import {
   ChevronLeft,
   Database,
   Upload,
-  Check
+  Check,
+  ChevronDown
 } from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
@@ -86,6 +87,19 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
   
   const [copiedExport, setCopiedExport] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
+
+  const toggleExpandNote = (noteId: string) => {
+    setExpandedNoteIds(prev => {
+      const next = new Set(prev);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  };
 
   // Cache of verse snippets for highlights
   const [highlightSnippets, setHighlightSnippets] = useState<Record<string, { tagalog: string; english: string; book: BookMetadata; chapter: number; verse: number }>>({});
@@ -855,10 +869,44 @@ export const NotesDrawer: React.FC<NotesDrawerProps> = ({
                           </div>
                         </div>
 
-                        {/* Note Content with Interactive Clickable Verse Boxes */}
-                        <p style={{ fontSize: '0.84rem', color: 'var(--text-primary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                          {renderTextWithVerseBoxes(note.content)}
-                        </p>
+                        {/* Note Content with Interactive Clickable Verse Boxes & Expand/Collapse */}
+                        {(() => {
+                          const isExpanded = expandedNoteIds.has(note.id);
+                          const isLongContent = Boolean(note.content && (note.content.length > 120 || note.content.split('\n').length > 3));
+                          return (
+                            <div className={`note-content-preview-box ${isExpanded ? 'expanded' : 'collapsed'}`}>
+                              <p style={{
+                                fontSize: '0.84rem',
+                                color: 'var(--text-primary)',
+                                lineHeight: 1.6,
+                                whiteSpace: 'pre-wrap',
+                                margin: '6px 0',
+                                ...(!isExpanded && isLongContent ? {
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 3,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden'
+                                } : {})
+                              }}>
+                                {renderTextWithVerseBoxes(note.content)}
+                              </p>
+
+                              {isLongContent && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleExpandNote(note.id);
+                                  }}
+                                  className="note-expand-toggle-btn"
+                                >
+                                  <span>{isExpanded ? (lang === 'en' ? 'Show less' : 'Ipakita nang mas kaunti') : (lang === 'en' ? 'Show full note...' : 'Ipakita ang buong tala...')}</span>
+                                  <ChevronDown size={13} style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Attached verse snippet if available */}
                         {note.verseSnippet && !note.content.includes(note.verseSnippet) && (

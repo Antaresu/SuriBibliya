@@ -188,11 +188,20 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
         </div>
       </aside>
 
-      {/* Chapter Selection Modal */}
+      {/* Chapter Selection Modal - Responsive Full Screen on Mobile */}
       {activeBookForChapterModal && (
-        <div className="modal-overlay" onClick={() => setActiveBookForChapterModal(null)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+        <div className="modal-overlay chapter-modal-overlay" onClick={() => setActiveBookForChapterModal(null)}>
+          <div className="modal-card chapter-modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
+              <button
+                type="button"
+                className="modal-back-btn"
+                onClick={() => setActiveBookForChapterModal(null)}
+                title={lang === 'en' ? 'Back' : 'Bumalik'}
+              >
+                <ChevronLeft size={20} />
+                <span>{lang === 'en' ? 'Back' : 'Bumalik'}</span>
+              </button>
               <div className="modal-title">
                 <Layers size={20} className="text-gold" />
                 <span>{t.selectChapterTitle}: {lang === 'en' ? activeBookForChapterModal.name : activeBookForChapterModal.tagalog}</span>

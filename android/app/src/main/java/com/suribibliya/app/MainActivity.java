@@ -3,6 +3,7 @@ package com.suribibliya.app;
 import android.os.Bundle;
 import android.view.View;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -10,15 +11,28 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Fix: Prevent Capacitor 8 SystemBars from applying duplicate bottom padding
-        // when the software keyboard (IME) is displayed. Since windowSoftInputMode="adjustResize"
-        // is used in AndroidManifest.xml, Android already resizes the window.
-        // Applying extra IME padding squishes the WebView and reveals the dark gray window background.
+        // Fix: Prevent duplicate IME padding and pass navigation bar height to CSS
+        // for Xiaomi (MIUI/HyperOS) and all Android navigation bar heights.
         getBridge().getWebView().post(() -> {
             View parent = (View) getBridge().getWebView().getParent();
             if (parent != null) {
                 ViewCompat.setOnApplyWindowInsetsListener(parent, (v, insets) -> {
                     v.setPadding(0, 0, 0, 0);
+
+                    try {
+                        int navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+                        float density = getResources().getDisplayMetrics().density;
+                        int navBottomDp = density > 0 ? Math.round(navBottom / density) : navBottom;
+
+                        getBridge().getWebView().post(() -> {
+                            getBridge().getWebView().evaluateJavascript(
+                                "document.documentElement.style.setProperty('--android-nav-bottom', '" + navBottomDp + "px');",
+                                null
+                            );
+                        });
+                    } catch (Exception ignored) {
+                    }
+
                     return insets;
                 });
                 getBridge().getWebView().requestApplyInsets();

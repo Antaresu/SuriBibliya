@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { BookMetadata, Verse } from './types/bible';
 import { bibleService } from './services/bibleService';
 import { notesService, UserSettings } from './services/notesService';
@@ -47,6 +48,8 @@ export const App: React.FC = () => {
   const [searchModalOpen, setSearchModalOpen] = useState<boolean>(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
   const [isComposingNote, setIsComposingNote] = useState<boolean>(false);
+  const [backToastMessage, setBackToastMessage] = useState<string | null>(null);
+  const lastBackPressRef = useRef<number>(0);
 
   // Settings & Storage
   const [settings, setSettings] = useState<UserSettings>(notesService.getSettings());
@@ -71,17 +74,97 @@ export const App: React.FC = () => {
     document.body.className = `theme-${settings.theme}`;
   }, [settings.theme]);
 
-  // Load verses when book or chapter changes
+  // Load verses when book or chapter changes (Fix: do NOT auto-select verse 1 so it doesn't look highlighted)
   useEffect(() => {
     if (!selectedBook) return;
     bibleService.getBookData(selectedBook.id).then(data => {
       if (data && data.chapters[String(selectedChapter)]) {
         const chVerses = data.chapters[String(selectedChapter)];
         setVerses(chVerses);
-        setSelectedVerse(chVerses[0] || null);
+        setSelectedVerse(null);
       }
     });
   }, [selectedBook?.id, selectedChapter]);
+
+  // Android Hardware & Gesture Back Button Handling
+  useEffect(() => {
+    let backListener: any = null;
+
+    const registerBack = async () => {
+      try {
+        backListener = await CapacitorApp.addListener('backButton', () => {
+          // 1. Close any open modals or drawers and return to Home (Bible reader)
+          if (settingsModalOpen) {
+            setSettingsModalOpen(false);
+            return;
+          }
+          if (searchModalOpen) {
+            setSearchModalOpen(false);
+            return;
+          }
+          if (strongsKey) {
+            setStrongsKey(null);
+            return;
+          }
+          if (crossRefVerse) {
+            setCrossRefVerse(null);
+            return;
+          }
+          if (notesDrawerOpen) {
+            setNotesDrawerOpen(false);
+            return;
+          }
+          if (sidebarOpen) {
+            setSidebarOpen(false);
+            return;
+          }
+          if (typeof window !== 'undefined' && window.innerWidth < 1024 && inspectorOpen) {
+            setInspectorOpen(false);
+            return;
+          }
+
+          // 2. If multi-select is active in Scripture reader, cancel selection
+          const cancelMultiSelectBtn = document.getElementById('cancel-multi-select-btn');
+          if (cancelMultiSelectBtn) {
+            cancelMultiSelectBtn.click();
+            return;
+          }
+
+          // 3. Already at Home (Scripture reader): Double tap back within 2s to exit app
+          const now = Date.now();
+          if (now - lastBackPressRef.current < 2000) {
+            CapacitorApp.exitApp();
+          } else {
+            lastBackPressRef.current = now;
+            const msg = (settings.appLanguage || 'tl') === 'en'
+              ? 'Press back again to exit SuriBibliya'
+              : 'Pindutin muli ang back upang lumabas sa SuriBibliya';
+            setBackToastMessage(msg);
+            setTimeout(() => setBackToastMessage(null), 2000);
+          }
+        });
+      } catch {
+        // Non-native web browser environment
+      }
+    };
+
+    registerBack();
+
+    return () => {
+      if (backListener && backListener.remove) {
+        backListener.remove();
+      }
+    };
+  }, [
+    settingsModalOpen,
+    searchModalOpen,
+    strongsKey,
+    crossRefVerse,
+    notesDrawerOpen,
+    sidebarOpen,
+    inspectorOpen,
+    settings.appLanguage
+  ]);
 
   // Global Keyboard shortcuts (Ctrl+K for search)
   useEffect(() => {
@@ -551,6 +634,13 @@ export const App: React.FC = () => {
         }
         isHidden={isComposingNote}
       />
+
+      {/* Android Back Exit Confirmation Toast */}
+      {backToastMessage && (
+        <div className="back-exit-toast" role="alert">
+          {backToastMessage}
+        </div>
+      )}
     </div>
   );
 };

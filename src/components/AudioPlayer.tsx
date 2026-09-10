@@ -13,13 +13,30 @@ interface AudioPlayerProps {
   onVerseChange: (index: number) => void;
 }
 
-// Keep a persistent global reference to the SpeechSynthesisUtterance to prevent
-// Android Chromium WebView garbage collector from abruptly stopping playback midway.
 declare global {
   interface Window {
     __sbActiveUtterance?: SpeechSynthesisUtterance | null;
   }
 }
+
+interface LanguageVoiceOption {
+  id: string;
+  name: string;
+  subtitle: string;
+  flag: string;
+  langPrefixes: string[];
+  defaultLang: string;
+}
+
+const LANGUAGE_OPTIONS: LanguageVoiceOption[] = [
+  { id: 'fil', name: 'Filipino / Tagalog', subtitle: 'Ang Dating Biblia (ADB)', flag: '🇵🇭', langPrefixes: ['fil', 'tl', 'tagalog'], defaultLang: 'tl-PH' },
+  { id: 'en', name: 'English', subtitle: 'King James Version (KJV)', flag: '🇺🇸', langPrefixes: ['en'], defaultLang: 'en-US' },
+  { id: 'zh', name: 'Chinese (中文)', subtitle: 'Mandarin Chinese Audio', flag: '🇨🇳', langPrefixes: ['zh', 'cmn', 'chinese'], defaultLang: 'zh-CN' },
+  { id: 'ar', name: 'Arabic (العربية)', subtitle: 'Arabic Language Audio', flag: '🇸🇦', langPrefixes: ['ar', 'arabic'], defaultLang: 'ar-SA' },
+  { id: 'es', name: 'Spanish (Español)', subtitle: 'Spanish Language Audio', flag: '🇪🇸', langPrefixes: ['es', 'spanish'], defaultLang: 'es-ES' },
+  { id: 'el', name: 'Greek (Ελληνικά)', subtitle: 'Original Textus Receptus', flag: '🇬🇷', langPrefixes: ['el', 'grc', 'greek'], defaultLang: 'el-GR' },
+  { id: 'he', name: 'Hebrew (עברית)', subtitle: 'Original Hebrew OT', flag: '🇮🇱', langPrefixes: ['he', 'iw', 'hebrew'], defaultLang: 'he-IL' }
+];
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   book,
@@ -35,19 +52,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [rate, setRate] = useState<number>(1);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   
-  // Default to English if looking at KJV, otherwise Filipino ADB
-  const defaultVoice = currentTranslation === 'kjv' ? 'english-natural' : 'filipino-natural';
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>(defaultVoice);
+  // Default audio language: English for KJV, Filipino for ADB
+  const defaultSelectedLang = currentTranslation === 'kjv' ? 'en' : 'fil';
+  const [selectedLangId, setSelectedLangId] = useState<string>(defaultSelectedLang);
+  const [selectedDeviceVoiceURI, setSelectedDeviceVoiceURI] = useState<string | null>(null);
   const [showVoiceMenu, setShowVoiceMenu] = useState<boolean>(false);
 
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const voiceMenuRef = useRef<HTMLDivElement | null>(null);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef<boolean>(false);
-  const activeChunksRef = useRef<string[]>([]);
-  const chunkIndexRef = useRef<number>(0);
   const currentVerseIdxRef = useRef<number>(activeVerseIndex);
   const resumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   currentVerseIdxRef.current = activeVerseIndex;
 
@@ -89,7 +105,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       if (synthRef.current.onvoiceschanged !== undefined) {
         synthRef.current.onvoiceschanged = updateVoices;
       }
-      setTimeout(updateVoices, 800);
+      setTimeout(updateVoices, 500);
+      setTimeout(updateVoices, 1500);
     }
 
     return () => {
@@ -108,22 +125,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     isPlayingRef.current = false;
     setIsLoadingAudio(false);
 
+    if (playTimeoutRef.current) {
+      clearTimeout(playTimeoutRef.current);
+      playTimeoutRef.current = null;
+    }
+
     if (resumeIntervalRef.current) {
       clearInterval(resumeIntervalRef.current);
       resumeIntervalRef.current = null;
-    }
-
-    if (currentAudioRef.current) {
-      try {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.onended = null;
-        currentAudioRef.current.onerror = null;
-        currentAudioRef.current.removeAttribute('src');
-        currentAudioRef.current.load();
-      } catch {
-        // ignore
-      }
-      currentAudioRef.current = null;
     }
 
     if (synthRef.current) {
@@ -137,297 +146,194 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (typeof window !== 'undefined') {
       window.__sbActiveUtterance = null;
     }
-
-    activeChunksRef.current = [];
-    chunkIndexRef.current = 0;
   };
 
-  // Helper to split text into digestible chunks for TTS streaming (max ~130 chars)
-  const splitTextIntoChunks = (text: string, maxLen = 130): string[] => {
-    const clean = text.replace(/<S>\d+<\/S>/g, '').trim();
-    if (clean.length <= maxLen) return [clean];
-
-    const parts = clean.split(/([,;:.!?]+)/);
-    const chunks: string[] = [];
-    let current = '';
-
-    for (let i = 0; i < parts.length; i += 2) {
-      const sentence = (parts[i] || '') + (parts[i + 1] || '');
-      if ((current + sentence).length <= maxLen) {
-        current += sentence;
-      } else {
-        if (current.trim()) chunks.push(current.trim());
-        if (sentence.length > maxLen) {
-          const words = sentence.split(' ');
-          let wordChunk = '';
-          for (const w of words) {
-            if ((wordChunk + ' ' + w).length <= maxLen) {
-              wordChunk += (wordChunk ? ' ' : '') + w;
-            } else {
-              if (wordChunk.trim()) chunks.push(wordChunk.trim());
-              wordChunk = w;
-            }
-          }
-          current = wordChunk;
-        } else {
-          current = sentence;
-        }
-      }
+  // Find best matching voice for a language option
+  const findMatchingVoice = (langOption: LanguageVoiceOption): SpeechSynthesisVoice | null => {
+    if (!availableVoices.length) return null;
+    
+    // Exact or prefix match
+    for (const prefix of langOption.langPrefixes) {
+      const match = availableVoices.find(v => 
+        v.lang.toLowerCase().startsWith(prefix) || 
+        v.name.toLowerCase().includes(prefix)
+      );
+      if (match) return match;
     }
-    if (current.trim()) chunks.push(current.trim());
-    return chunks.length > 0 ? chunks : [clean];
+    return null;
   };
 
-  // Get text to speak for verse based on chosen language/voice
-  const getVerseTextToSpeak = (verseObj: Verse, isEnglish: boolean): string => {
-    if (isEnglish) {
-      const cleanKjv = verseObj.kjv.replace(/<S>\d+<\/S>/g, '').trim();
-      return `Verse ${verseObj.v}. ${cleanKjv}`;
-    }
-    return `Talata ${verseObj.v}. ${verseObj.adb}`;
-  };
+  // Get clean text to speak for the given verse
+  const getVerseTextToSpeak = (verseObj: Verse, langId: string): string => {
+    const cleanKjv = verseObj.kjv.replace(/<S>\d+<\/S>/g, '').trim();
+    const cleanOrig = verseObj.orig.replace(/<S>\d+<\/S>/g, '').trim();
 
-  /**
-   * Primary Engine: High-quality natural audio streaming via direct Google TTS.
-   * Works on any Android phone (even during calls, low memory, or when offline TTS is missing).
-   */
-  const playCloudTTSChunk = (verseIdx: number, langCode: 'tl' | 'en') => {
-    if (!isPlayingRef.current) return;
-
-    if (chunkIndexRef.current >= activeChunksRef.current.length) {
-      // Verse finished, move to next verse in the chapter
-      if (verseIdx + 1 < verses.length) {
-        const nextIdx = verseIdx + 1;
-        onVerseChange(nextIdx);
-        playVerse(nextIdx);
-      } else {
-        isPlayingRef.current = false;
-        setIsPlaying(false);
-      }
-      return;
-    }
-
-    const chunk = activeChunksRef.current[chunkIndexRef.current];
-    const encoded = encodeURIComponent(chunk);
-    // Direct Google Cloud TTS stream endpoint (returns audio/mpeg)
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=${langCode}&client=tw-ob`;
-
-    if (currentAudioRef.current) {
-      try {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.onended = null;
-        currentAudioRef.current.onerror = null;
-      } catch {
-        // ignore
-      }
-    }
-
-    setIsLoadingAudio(true);
-    const audio = new Audio();
-    audio.crossOrigin = 'anonymous';
-    audio.src = url;
-    audio.playbackRate = rate;
-    currentAudioRef.current = audio;
-
-    audio.oncanplay = () => {
-      setIsLoadingAudio(false);
-    };
-
-    audio.onended = () => {
-      if (!isPlayingRef.current) return;
-      chunkIndexRef.current += 1;
-      playCloudTTSChunk(verseIdx, langCode);
-    };
-
-    audio.onerror = () => {
-      setIsLoadingAudio(false);
-      if (!isPlayingRef.current) return;
-      // Network failed or blocked: seamlessly fallback to local SpeechSynthesis
-      playViaSpeechSynth(verseIdx);
-    };
-
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          setIsLoadingAudio(false);
-        })
-        .catch(() => {
-          setIsLoadingAudio(false);
-          if (!isPlayingRef.current) return;
-          // Fallback to local SpeechSynthesis
-          playViaSpeechSynth(verseIdx);
-        });
+    switch (langId) {
+      case 'fil':
+        return `Talata ${verseObj.v}. ${verseObj.adb}`;
+      case 'en':
+        return `Verse ${verseObj.v}. ${cleanKjv}`;
+      case 'el':
+      case 'he':
+        return cleanOrig || `Verse ${verseObj.v}. ${cleanKjv}`;
+      case 'zh':
+        // If reading in Chinese voice, speak verse reference and message
+        return `第 ${verseObj.v} 节. ${cleanKjv}`;
+      case 'ar':
+        return `الآية ${verseObj.v}. ${cleanKjv}`;
+      case 'es':
+        return `Versículo ${verseObj.v}. ${cleanKjv}`;
+      default:
+        return `Talata ${verseObj.v}. ${verseObj.adb}`;
     }
   };
 
-  /**
-   * Secondary Fallback Engine: Device SpeechSynthesis.
-   * Completely hardened for Android Chrome / WebView bugs.
-   */
-  const playViaSpeechSynth = (index: number) => {
-    if (!isPlayingRef.current || !synthRef.current || index >= verses.length) {
+  // Play verse using Web Speech API with Android keep-alive
+  const playVerse = (index: number) => {
+    if (index < 0 || index >= verses.length) {
       isPlayingRef.current = false;
       setIsPlaying(false);
       setIsLoadingAudio(false);
       return;
     }
 
-    setIsLoadingAudio(false);
+    if (!synthRef.current && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis;
+    }
 
+    if (!synthRef.current) {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      return;
+    }
+
+    // Cancel prior audio and clear timers
+    if (playTimeoutRef.current) {
+      clearTimeout(playTimeoutRef.current);
+      playTimeoutRef.current = null;
+    }
     if (resumeIntervalRef.current) {
       clearInterval(resumeIntervalRef.current);
       resumeIntervalRef.current = null;
     }
 
     try {
+      if (synthRef.current.paused) {
+        synthRef.current.resume();
+      }
       synthRef.current.cancel();
     } catch {
       // ignore
     }
 
-    const isEnglish = selectedVoiceURI === 'english-natural' || selectedVoiceURI.toLowerCase().includes('english') || selectedVoiceURI.toLowerCase().includes('en-');
-    const verseObj = verses[index];
-    const textToSpeak = getVerseTextToSpeak(verseObj, isEnglish);
-
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.rate = rate;
-
-    // Save global reference to prevent GC on Android
-    if (typeof window !== 'undefined') {
-      window.__sbActiveUtterance = utterance;
-    }
-
-    // Voice selection
-    const matched = availableVoices.find(v => v.voiceURI === selectedVoiceURI);
-    if (matched) {
-      utterance.voice = matched;
-      utterance.lang = matched.lang;
-    } else if (isEnglish) {
-      const enVoice = availableVoices.find(v => v.lang.startsWith('en'));
-      if (enVoice) utterance.voice = enVoice;
-      utterance.lang = 'en-US';
-    } else {
-      // Filipino voice search
-      const filVoice = availableVoices.find(v =>
-        v.lang.startsWith('fil') || v.lang.startsWith('tl') || v.name.toLowerCase().includes('filipino') || v.name.toLowerCase().includes('tagalog')
-      );
-      if (filVoice) {
-        utterance.voice = filVoice;
-        utterance.lang = filVoice.lang;
-      } else {
-        // Many Android devices don't have Filipino TTS installed.
-        // Fall back to default voice rather than throwing an error!
-        utterance.lang = 'en-US';
-      }
-    }
-
-    utterance.onstart = () => {
-      // Android WebView keep-alive
-      if (resumeIntervalRef.current) clearInterval(resumeIntervalRef.current);
-      resumeIntervalRef.current = setInterval(() => {
-        if (synthRef.current && synthRef.current.paused && isPlayingRef.current) {
-          synthRef.current.resume();
-        }
-      }, 10000);
-    };
-
-    utterance.onend = () => {
-      if (resumeIntervalRef.current) {
-        clearInterval(resumeIntervalRef.current);
-        resumeIntervalRef.current = null;
-      }
-      if (!isPlayingRef.current) return;
-      if (index + 1 < verses.length) {
-        const nextIdx = index + 1;
-        onVerseChange(nextIdx);
-        playVerse(nextIdx);
-      } else {
-        isPlayingRef.current = false;
-        setIsPlaying(false);
-      }
-    };
-
-    utterance.onerror = (e: any) => {
-      if (resumeIntervalRef.current) {
-        clearInterval(resumeIntervalRef.current);
-        resumeIntervalRef.current = null;
-      }
-      if (!isPlayingRef.current || e.error === 'canceled' || e.error === 'interrupted') {
-        return;
-      }
-
-      // If language was unavailable on device, try one more time with default voice
-      if (e.error === 'language-unavailable') {
-        try {
-          const retryUtterance = new SpeechSynthesisUtterance(textToSpeak);
-          retryUtterance.rate = rate;
-          if (typeof window !== 'undefined') window.__sbActiveUtterance = retryUtterance;
-          retryUtterance.onend = utterance.onend;
-          synthRef.current?.speak(retryUtterance);
-          return;
-        } catch {
-          // ignore
-        }
-      }
-
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-    };
-
-    try {
-      synthRef.current.speak(utterance);
-    } catch {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-    }
-  };
-
-  const playVerse = (index: number) => {
-    if (index < 0 || index >= verses.length) {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      return;
-    }
-
-    // Reset previous audio
-    if (currentAudioRef.current) {
-      try {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.onended = null;
-        currentAudioRef.current.onerror = null;
-        currentAudioRef.current = null;
-      } catch {
-        // ignore
-      }
-    }
-    if (synthRef.current) {
-      try {
-        synthRef.current.cancel();
-      } catch {
-        // ignore
-      }
-    }
-
     isPlayingRef.current = true;
     setIsPlaying(true);
+    setIsLoadingAudio(true);
 
     const verseObj = verses[index];
+    const textToSpeak = getVerseTextToSpeak(verseObj, selectedLangId);
+    const selectedOption = LANGUAGE_OPTIONS.find(o => o.id === selectedLangId) || LANGUAGE_OPTIONS[0];
 
-    if (selectedVoiceURI === 'filipino-natural') {
-      const fullText = getVerseTextToSpeak(verseObj, false);
-      activeChunksRef.current = splitTextIntoChunks(fullText, 130);
-      chunkIndexRef.current = 0;
-      playCloudTTSChunk(index, 'tl');
-    } else if (selectedVoiceURI === 'english-natural') {
-      const fullText = getVerseTextToSpeak(verseObj, true);
-      activeChunksRef.current = splitTextIntoChunks(fullText, 130);
-      chunkIndexRef.current = 0;
-      playCloudTTSChunk(index, 'en');
-    } else {
-      // User chose a specific device voice
-      playViaSpeechSynth(index);
-    }
+    // Android Chrome WebView fix: slight timeout after cancel prevents immediate cancellation
+    playTimeoutRef.current = setTimeout(() => {
+      if (!isPlayingRef.current || !synthRef.current) return;
+
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.rate = rate;
+
+      // Assign voice
+      if (selectedDeviceVoiceURI) {
+        const devVoice = availableVoices.find(v => v.voiceURI === selectedDeviceVoiceURI);
+        if (devVoice) {
+          utterance.voice = devVoice;
+          utterance.lang = devVoice.lang;
+        }
+      } else {
+        const matched = findMatchingVoice(selectedOption);
+        if (matched) {
+          utterance.voice = matched;
+          utterance.lang = matched.lang;
+        } else {
+          utterance.lang = selectedOption.defaultLang;
+        }
+      }
+
+      // Save global reference to prevent Android garbage collection
+      if (typeof window !== 'undefined') {
+        window.__sbActiveUtterance = utterance;
+      }
+
+      utterance.onstart = () => {
+        setIsLoadingAudio(false);
+        // Android keep-alive: pulse resume every 8s to prevent Chrome sleep bug
+        if (resumeIntervalRef.current) clearInterval(resumeIntervalRef.current);
+        resumeIntervalRef.current = setInterval(() => {
+          if (synthRef.current && isPlayingRef.current) {
+            if (synthRef.current.speaking && !synthRef.current.paused) {
+              synthRef.current.pause();
+              synthRef.current.resume();
+            }
+          }
+        }, 8000);
+      };
+
+      utterance.onend = () => {
+        if (resumeIntervalRef.current) {
+          clearInterval(resumeIntervalRef.current);
+          resumeIntervalRef.current = null;
+        }
+        if (!isPlayingRef.current) return;
+
+        // Move to next verse automatically
+        if (index + 1 < verses.length) {
+          const nextIdx = index + 1;
+          onVerseChange(nextIdx);
+          playVerse(nextIdx);
+        } else {
+          isPlayingRef.current = false;
+          setIsPlaying(false);
+        }
+      };
+
+      utterance.onerror = (e: any) => {
+        if (resumeIntervalRef.current) {
+          clearInterval(resumeIntervalRef.current);
+          resumeIntervalRef.current = null;
+        }
+        setIsLoadingAudio(false);
+
+        // Ignore user cancellation or intentional skip
+        if (!isPlayingRef.current || e.error === 'canceled' || e.error === 'interrupted') {
+          return;
+        }
+
+        // If specific language failed, retry with system default voice
+        if (e.error === 'language-unavailable' || e.error === 'voice-unavailable') {
+          try {
+            const fallbackUtterance = new SpeechSynthesisUtterance(textToSpeak);
+            fallbackUtterance.rate = rate;
+            fallbackUtterance.onend = utterance.onend;
+            if (typeof window !== 'undefined') window.__sbActiveUtterance = fallbackUtterance;
+            synthRef.current?.speak(fallbackUtterance);
+            return;
+          } catch {
+            // ignore
+          }
+        }
+
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+      };
+
+      try {
+        synthRef.current.speak(utterance);
+      } catch (err) {
+        console.warn('Speech synthesis speak error:', err);
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+        setIsLoadingAudio(false);
+      }
+    }, 45);
   };
 
   const togglePlay = () => {
@@ -465,19 +371,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     setIsPlaying(false);
   };
 
-  // Label for active voice display
-  const getSelectedVoiceName = () => {
-    if (selectedVoiceURI === 'filipino-natural') {
-      return '🇵🇭 Filipino (ADB)';
+  // Get display name of chosen language or voice
+  const getSelectedVoiceDisplayName = () => {
+    if (selectedDeviceVoiceURI) {
+      const found = availableVoices.find(v => v.voiceURI === selectedDeviceVoiceURI);
+      if (found) {
+        return found.name.split(' - ')[0].replace('Microsoft ', '').replace('Google ', '');
+      }
     }
-    if (selectedVoiceURI === 'english-natural') {
-      return '🇺🇸 English (KJV)';
-    }
-    const found = availableVoices.find(v => v.voiceURI === selectedVoiceURI);
-    if (found) {
-      return found.name.split(' - ')[0].replace('Microsoft ', '').replace('Google ', '');
-    }
-    return t.voiceLabel;
+    const currentOpt = LANGUAGE_OPTIONS.find(o => o.id === selectedLangId);
+    return currentOpt ? `${currentOpt.flag} ${currentOpt.name.split(' ')[0]}` : t.audioTitle;
   };
 
   return (
@@ -501,7 +404,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         <span className="hide-on-mobile">{t.audioTitle}</span>
       </div>
 
-      {/* Voice Selection Dropdown Trigger */}
+      {/* Voice / Language Dropdown Trigger */}
       <div style={{ position: 'relative' }}>
         <button
           type="button"
@@ -510,22 +413,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             background: 'var(--bg-input)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-full)',
-            color: selectedVoiceURI === 'filipino-natural' ? '#10b981' : selectedVoiceURI === 'english-natural' ? '#38bdf8' : 'var(--text-secondary)',
+            color: isPlaying ? '#10b981' : 'var(--text-secondary)',
             fontSize: '0.72rem',
             padding: '3px 8px',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
             cursor: 'pointer',
-            maxWidth: '135px',
+            maxWidth: '145px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             fontWeight: 600
           }}
-          title={getSelectedVoiceName()}
+          title={getSelectedVoiceDisplayName()}
         >
-          <span>{getSelectedVoiceName()}</span>
+          <span>{getSelectedVoiceDisplayName()}</span>
           <ChevronDown size={11} />
         </button>
 
@@ -545,96 +448,64 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               padding: '6px',
               zIndex: 2000,
               minWidth: '240px',
-              maxHeight: '300px',
+              maxHeight: '340px',
               overflowY: 'auto'
             }}
           >
             <div style={{ fontSize: '0.7rem', color: 'var(--text-gold)', padding: '4px 8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              {lang === 'en' ? 'Select Audio Language:' : 'Pumili ng Boses / Wika:'}
+              {lang === 'en' ? 'Select Audio Language:' : 'Pumili ng Wika / Boses:'}
             </div>
 
-            {/* 1. Featured Filipino Natural Voice */}
-            <button
-              type="button"
-              onClick={() => {
-                const wasPlaying = isPlaying;
-                stopAllAudio();
-                setSelectedVoiceURI('filipino-natural');
-                setShowVoiceMenu(false);
-                if (wasPlaying) {
-                  playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
-                }
-              }}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 10px',
-                background: selectedVoiceURI === 'filipino-natural' ? 'var(--accent-gold-glow)' : 'transparent',
-                color: selectedVoiceURI === 'filipino-natural' ? 'var(--accent-gold)' : '#34d399',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '4px'
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700 }}>🇵🇭 Filipino (Tagalog ADB)</div>
-                <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
-                  {lang === 'en' ? 'Natural native Tagalog audio (ADB)' : 'Likas na boses Tagalog (Ang Dating Biblia)'}
-                </div>
-              </div>
-              {selectedVoiceURI === 'filipino-natural' && <span style={{ color: 'var(--accent-gold)' }}>✓</span>}
-            </button>
+            {/* Standard Languages (Filipino, English, Chinese, Arabic, Spanish, Greek, Hebrew) */}
+            {LANGUAGE_OPTIONS.map(opt => {
+              const isSelected = selectedLangId === opt.id && !selectedDeviceVoiceURI;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    const wasPlaying = isPlaying;
+                    stopAllAudio();
+                    setSelectedLangId(opt.id);
+                    setSelectedDeviceVoiceURI(null);
+                    setShowVoiceMenu(false);
+                    if (wasPlaying) {
+                      playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '7px 10px',
+                    background: isSelected ? 'var(--accent-gold-glow)' : 'transparent',
+                    color: isSelected ? 'var(--accent-gold)' : 'var(--text-primary)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '2px'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{opt.flag} {opt.name}</div>
+                    <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>{opt.subtitle}</div>
+                  </div>
+                  {isSelected && <span style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>✓</span>}
+                </button>
+              );
+            })}
 
-            {/* 2. Featured English Natural Voice */}
-            <button
-              type="button"
-              onClick={() => {
-                const wasPlaying = isPlaying;
-                stopAllAudio();
-                setSelectedVoiceURI('english-natural');
-                setShowVoiceMenu(false);
-                if (wasPlaying) {
-                  playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
-                }
-              }}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 10px',
-                background: selectedVoiceURI === 'english-natural' ? 'var(--accent-gold-glow)' : 'transparent',
-                color: selectedVoiceURI === 'english-natural' ? 'var(--accent-gold)' : '#38bdf8',
-                border: 'none',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '4px'
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700 }}>🇺🇸 English (KJV Bible)</div>
-                <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
-                  {lang === 'en' ? 'Clear King James Version audio' : 'Malinaw na English audio ng KJV'}
-                </div>
-              </div>
-              {selectedVoiceURI === 'english-natural' && <span style={{ color: 'var(--accent-gold)' }}>✓</span>}
-            </button>
-
-            {/* 3. Device System Voices if any */}
+            {/* Device-installed system voices */}
             {availableVoices.length > 0 && (
-              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0', paddingTop: '4px' }}>
+              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '6px 0 4px 0', paddingTop: '4px' }}>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', padding: '2px 8px' }}>
                   {lang === 'en' ? 'Device Offline Voices:' : 'Mga Boses sa Device:'}
                 </div>
                 {availableVoices.slice(0, 8).map(v => {
-                  const isSelected = v.voiceURI === selectedVoiceURI;
+                  const isSelected = selectedDeviceVoiceURI === v.voiceURI;
                   return (
                     <button
                       key={v.voiceURI}
@@ -642,7 +513,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                       onClick={() => {
                         const wasPlaying = isPlaying;
                         stopAllAudio();
-                        setSelectedVoiceURI(v.voiceURI);
+                        setSelectedDeviceVoiceURI(v.voiceURI);
                         setShowVoiceMenu(false);
                         if (wasPlaying) {
                           playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
@@ -735,12 +606,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <button
             key={r}
             type="button"
-            onClick={() => {
-              setRate(r);
-              if (currentAudioRef.current) {
-                currentAudioRef.current.playbackRate = r;
-              }
-            }}
+            onClick={() => setRate(r)}
             style={{
               padding: '1px 4px',
               fontSize: '0.64rem',

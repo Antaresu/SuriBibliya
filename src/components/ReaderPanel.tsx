@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BookMetadata, Verse, ViewMode, ActiveTranslation, Highlight } from '../types/bible';
 import { AudioPlayer } from './AudioPlayer';
 import { translations, AppLanguage } from '../services/i18n';
@@ -15,7 +15,9 @@ import {
   Copy, 
   Check, 
   MoreVertical,
-  Highlighter
+  Highlighter,
+  X,
+  CheckSquare
 } from 'lucide-react';
 
 interface ReaderPanelProps {
@@ -63,6 +65,12 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
   const [showStrongs, setShowStrongs] = useState(true);
   const [copiedVerseIndex, setCopiedVerseIndex] = useState<number | null>(null);
   const [activeMenuVerseNum, setActiveMenuVerseNum] = useState<number | null>(null);
+
+  // Multi-verse selection state (triggered by holding / long-pressing a verse)
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
+  const [selectedVersesForAction, setSelectedVersesForAction] = useState<Set<number>>(new Set());
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressActiveRef = useRef<boolean>(false);
 
   const t = translations[lang] || translations.tl;
   const isGreek = book.testament === 'NT';
@@ -114,6 +122,97 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
         </span>
       );
     });
+  };
+
+  // Extract Strong's numbers associated with a verse for ADB readers
+  const extractStrongsFromVerse = (verse: Verse): string[] => {
+    const combined = (verse.kjv || '') + ' ' + (verse.orig || '');
+    const matches = Array.from(combined.matchAll(/<S>(\d+)<\/S>/g));
+    const unique: string[] = [];
+    const seen = new Set<string>();
+    for (const m of matches) {
+      if (!seen.has(m[1])) {
+        seen.add(m[1]);
+        unique.push(m[1]);
+      }
+    }
+    return unique.slice(0, 10);
+  };
+
+  // Long-press / Hold handlers (triggers multi-select mode after ~420ms)
+  const handlePointerDown = (verseNum: number) => {
+    isLongPressActiveRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressActiveRef.current = true;
+      setIsMultiSelectMode(true);
+      setSelectedVersesForAction(prev => {
+        const next = new Set(prev);
+        next.add(verseNum);
+        return next;
+      });
+      if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
+        try { window.navigator.vibrate(40); } catch { /* ignore */ }
+      }
+    }, 420);
+  };
+
+  const handlePointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // Click on a verse row
+  const handleVerseRowClick = (verse: Verse) => {
+    if (isLongPressActiveRef.current) {
+      isLongPressActiveRef.current = false;
+      return;
+    }
+
+    if (isMultiSelectMode) {
+      setSelectedVersesForAction(prev => {
+        const next = new Set(prev);
+        if (next.has(verse.v)) {
+          next.delete(verse.v);
+          if (next.size === 0) {
+            setIsMultiSelectMode(false);
+          }
+        } else {
+          next.add(verse.v);
+        }
+        return next;
+      });
+      return;
+    }
+
+    // Normal mode: select verse
+    onSelectVerse(verse);
+  };
+
+  // Highlight all currently selected verses in multi-select mode
+  const handleHighlightAllSelected = (color: string | null) => {
+    selectedVersesForAction.forEach(vNum => {
+      const vKey = `${book.id}.${chapter}.${vNum}`;
+      onSetHighlight(vKey, color);
+    });
+    setIsMultiSelectMode(false);
+    setSelectedVersesForAction(new Set());
+  };
+
+  // Copy all currently selected verses
+  const handleCopyAllSelected = () => {
+    const sortedNums = Array.from(selectedVersesForAction).sort((a, b) => a - b);
+    const bookTitle = lang === 'en' ? book.name : book.tagalog;
+    const lines = sortedNums.map(num => {
+      const vObj = verses.find(v => v.v === num);
+      return vObj ? `${num}. ${vObj.adb}` : '';
+    }).filter(Boolean);
+
+    const fullText = `[${bookTitle} ${chapter}:${sortedNums.join(',')}]\n` + lines.join('\n');
+    navigator.clipboard.writeText(fullText);
+    setIsMultiSelectMode(false);
+    setSelectedVersesForAction(new Set());
   };
 
   const handleCopyVerse = (verse: Verse) => {
@@ -169,7 +268,7 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
         </div>
 
         <div className="reader-controls">
-          {/* Audio Player */}
+          {/* Audio Player with Multilingual Support */}
           <AudioPlayer
             book={book}
             chapter={chapter}
@@ -263,19 +362,88 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
           fontSize: fontSizeStyle
         }}
       >
+        {/* Floating Top Action Bar for Multi-Verse Selection */}
+        {isMultiSelectMode && (
+          <div className="multi-select-floating-bar">
+            <div className="multi-select-title-group">
+              <CheckSquare size={16} />
+              <span>
+                {selectedVersesForAction.size} {lang === 'en' ? 'verses selected' : 'talata ang napili'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {lang === 'en' ? 'Highlight All:' : 'I-highlight Lahat:'}
+              </span>
+              {['amber', 'emerald', 'cyan', 'purple', 'rose'].map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleHighlightAllSelected(c)}
+                  className="multi-select-color-btn"
+                  style={{ background: `var(--hl-${c})` }}
+                  title={`Color ${c}`}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => handleHighlightAllSelected(null)}
+                className="action-icon-btn"
+                style={{ width: '24px', height: '24px' }}
+                title={lang === 'en' ? 'Remove Highlights' : 'Alisin ang Highlight'}
+              >
+                <Highlighter size={13} color="var(--text-muted)" />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={handleCopyAllSelected}
+                className="action-icon-btn"
+                style={{ width: 'auto', padding: '4px 8px', borderRadius: 'var(--radius-sm)', fontSize: '0.72rem', gap: '4px' }}
+                title="Copy selected verses"
+              >
+                <Copy size={13} />
+                <span>{lang === 'en' ? 'Copy' : 'Kopyahin'}</span>
+              </button>
+
+              <button
+                type="button"
+                id="cancel-multi-select-btn"
+                onClick={() => {
+                  setIsMultiSelectMode(false);
+                  setSelectedVersesForAction(new Set());
+                }}
+                className="action-icon-btn"
+                style={{ width: '26px', height: '26px' }}
+                title={t.cancel}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {verses.map((verse) => {
           const verseKey = `${book.id}.${chapter}.${verse.v}`;
           const isSelected = selectedVerse?.v === verse.v;
+          const isMultiSelected = selectedVersesForAction.has(verse.v);
           const highlight = highlights[verseKey];
           const highlightClass = highlight ? `highlight-${highlight.color}` : '';
           const isMenuOpen = activeMenuVerseNum === verse.v;
+          const strongsForAdb = extractStrongsFromVerse(verse);
 
           return (
             <div
               key={verse.v}
               id={`verse-${verse.v}`}
-              className={`verse-row ${isSelected ? 'selected' : ''} ${highlightClass}`}
-              onClick={() => onSelectVerse(verse)}
+              className={`verse-row ${isSelected && !isMultiSelectMode ? 'selected' : ''} ${isMultiSelected ? 'multi-selected' : ''} ${highlightClass}`}
+              onPointerDown={() => handlePointerDown(verse.v)}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onClick={() => handleVerseRowClick(verse)}
             >
               {/* Three-Dots Menu Button */}
               <button
@@ -409,7 +577,32 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
               {viewMode === 'single' && (
                 <div className="single-verse-text" style={{ paddingRight: '36px' }}>
                   <span className="verse-num-badge">{verse.v}</span>
-                  {activeSingleTranslation === 'adb' && <span>{verse.adb}</span>}
+                  {activeSingleTranslation === 'adb' && (
+                    <>
+                      <span>{verse.adb}</span>
+                      {showStrongs && strongsForAdb.length > 0 && (
+                        <div className="adb-strongs-bar">
+                          <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            Strong's {isGreek ? 'Griyego' : 'Hebreo'}:
+                          </span>
+                          {strongsForAdb.map(sNum => (
+                            <button
+                              key={sNum}
+                              type="button"
+                              className="adb-strongs-chip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenStrongs(sNum, isGreek);
+                              }}
+                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
+                            >
+                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                   {activeSingleTranslation === 'kjv' && <span>{renderTextWithStrongs(verse.kjv, false)}</span>}
                   {activeSingleTranslation === 'orig' && (
                     <span className={isGreek ? 'col-text greek' : 'col-text hebrew'}>
@@ -421,12 +614,33 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
 
               {viewMode === 'parallel' && (
                 <div className="parallel-verse-grid" style={{ paddingRight: '36px' }}>
-                  {/* Column 1: Ang Dating Biblia 1905 */}
+                  {/* Column 1: Ang Dating Biblia 1905 with Strong's tags chips */}
                   <div className="parallel-col">
                     <div className="col-tag">Ang Dating Biblia (1905)</div>
                     <div className="col-text">
                       <span className="verse-num-badge">{verse.v}</span>
                       {verse.adb}
+                      {showStrongs && strongsForAdb.length > 0 && (
+                        <div className="adb-strongs-bar">
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            Strong's:
+                          </span>
+                          {strongsForAdb.slice(0, 6).map(sNum => (
+                            <button
+                              key={sNum}
+                              type="button"
+                              className="adb-strongs-chip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenStrongs(sNum, isGreek);
+                              }}
+                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
+                            >
+                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -466,6 +680,27 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
                     <div className="interlinear-label">Ang Dating Biblia (Tagalog 1905):</div>
                     <div style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>
                       {verse.adb}
+                      {showStrongs && strongsForAdb.length > 0 && (
+                        <div className="adb-strongs-bar">
+                          <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                            Kaugnay na Strong's:
+                          </span>
+                          {strongsForAdb.map(sNum => (
+                            <button
+                              key={sNum}
+                              type="button"
+                              className="adb-strongs-chip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenStrongs(sNum, isGreek);
+                              }}
+                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
+                            >
+                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

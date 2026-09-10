@@ -124,20 +124,6 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
     });
   };
 
-  // Extract Strong's numbers associated with a verse for ADB readers
-  const extractStrongsFromVerse = (verse: Verse): string[] => {
-    const combined = (verse.kjv || '') + ' ' + (verse.orig || '');
-    const matches = Array.from(combined.matchAll(/<S>(\d+)<\/S>/g));
-    const unique: string[] = [];
-    const seen = new Set<string>();
-    for (const m of matches) {
-      if (!seen.has(m[1])) {
-        seen.add(m[1]);
-        unique.push(m[1]);
-      }
-    }
-    return unique.slice(0, 10);
-  };
 
   // Long-press / Hold handlers (triggers multi-select mode after ~420ms)
   const handlePointerDown = (verseNum: number) => {
@@ -433,7 +419,6 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
           const highlight = highlights[verseKey];
           const highlightClass = highlight ? `highlight-${highlight.color}` : '';
           const isMenuOpen = activeMenuVerseNum === verse.v;
-          const strongsForAdb = extractStrongsFromVerse(verse);
 
           return (
             <div
@@ -577,32 +562,7 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
               {viewMode === 'single' && (
                 <div className="single-verse-text" style={{ paddingRight: '36px' }}>
                   <span className="verse-num-badge">{verse.v}</span>
-                  {activeSingleTranslation === 'adb' && (
-                    <>
-                      <span>{verse.adb}</span>
-                      {showStrongs && strongsForAdb.length > 0 && (
-                        <div className="adb-strongs-bar">
-                          <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            Strong's {isGreek ? 'Griyego' : 'Hebreo'}:
-                          </span>
-                          {strongsForAdb.map(sNum => (
-                            <button
-                              key={sNum}
-                              type="button"
-                              className="adb-strongs-chip"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenStrongs(sNum, isGreek);
-                              }}
-                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
-                            >
-                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
+                  {activeSingleTranslation === 'adb' && <span>{verse.adb}</span>}
                   {activeSingleTranslation === 'kjv' && <span>{renderTextWithStrongs(verse.kjv, false)}</span>}
                   {activeSingleTranslation === 'orig' && (
                     <span className={isGreek ? 'col-text greek' : 'col-text hebrew'}>
@@ -614,33 +574,12 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
 
               {viewMode === 'parallel' && (
                 <div className="parallel-verse-grid" style={{ paddingRight: '36px' }}>
-                  {/* Column 1: Ang Dating Biblia 1905 with Strong's tags chips */}
+                  {/* Column 1: Ang Dating Biblia 1905 */}
                   <div className="parallel-col">
                     <div className="col-tag">Ang Dating Biblia (1905)</div>
                     <div className="col-text">
                       <span className="verse-num-badge">{verse.v}</span>
                       {verse.adb}
-                      {showStrongs && strongsForAdb.length > 0 && (
-                        <div className="adb-strongs-bar">
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                            Strong's:
-                          </span>
-                          {strongsForAdb.slice(0, 6).map(sNum => (
-                            <button
-                              key={sNum}
-                              type="button"
-                              className="adb-strongs-chip"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenStrongs(sNum, isGreek);
-                              }}
-                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
-                            >
-                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -680,27 +619,6 @@ export const ReaderPanel: React.FC<ReaderPanelProps> = ({
                     <div className="interlinear-label">Ang Dating Biblia (Tagalog 1905):</div>
                     <div style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>
                       {verse.adb}
-                      {showStrongs && strongsForAdb.length > 0 && (
-                        <div className="adb-strongs-bar">
-                          <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
-                            Kaugnay na Strong's:
-                          </span>
-                          {strongsForAdb.map(sNum => (
-                            <button
-                              key={sNum}
-                              type="button"
-                              className="adb-strongs-chip"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenStrongs(sNum, isGreek);
-                              }}
-                              title={`Strong's Lexicon (${isGreek ? 'G' : 'H'}${sNum})`}
-                            >
-                              <span>{isGreek ? 'G' : 'H'}{sNum}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </div>
 

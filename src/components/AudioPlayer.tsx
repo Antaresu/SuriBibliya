@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Verse, BookMetadata } from '../types/bible';
-import { Volume2, Play, Pause, Square, ChevronDown, SkipForward, SkipBack, Loader2 } from 'lucide-react';
+import { 
+  Volume2, 
+  Play, 
+  Pause, 
+  Square, 
+  ChevronDown, 
+  Download, 
+  RotateCcw, 
+  RotateCw, 
+  Loader2,
+  ExternalLink,
+  Check
+} from 'lucide-react';
 import { translations, AppLanguage } from '../services/i18n';
 
 interface AudioPlayerProps {
@@ -13,30 +25,80 @@ interface AudioPlayerProps {
   onVerseChange: (index: number) => void;
 }
 
-declare global {
-  interface Window {
-    __sbActiveUtterance?: SpeechSynthesisUtterance | null;
-  }
-}
-
-interface LanguageVoiceOption {
+interface AudioLanguageSource {
   id: string;
   name: string;
   subtitle: string;
   flag: string;
-  langPrefixes: string[];
-  defaultLang: string;
+  code: number;
+  hebrewCode?: number;
 }
 
-const LANGUAGE_OPTIONS: LanguageVoiceOption[] = [
-  { id: 'fil', name: 'Filipino / Tagalog', subtitle: 'Ang Dating Biblia (ADB)', flag: '🇵🇭', langPrefixes: ['fil', 'tl', 'tagalog'], defaultLang: 'tl-PH' },
-  { id: 'en', name: 'English', subtitle: 'King James Version (KJV)', flag: '🇺🇸', langPrefixes: ['en'], defaultLang: 'en-US' },
-  { id: 'zh', name: 'Chinese (中文)', subtitle: 'Mandarin Chinese Audio', flag: '🇨🇳', langPrefixes: ['zh', 'cmn', 'chinese'], defaultLang: 'zh-CN' },
-  { id: 'ar', name: 'Arabic (العربية)', subtitle: 'Arabic Language Audio', flag: '🇸🇦', langPrefixes: ['ar', 'arabic'], defaultLang: 'ar-SA' },
-  { id: 'es', name: 'Spanish (Español)', subtitle: 'Spanish Language Audio', flag: '🇪🇸', langPrefixes: ['es', 'spanish'], defaultLang: 'es-ES' },
-  { id: 'el', name: 'Greek (Ελληνικά)', subtitle: 'Original Textus Receptus', flag: '🇬🇷', langPrefixes: ['el', 'grc', 'greek'], defaultLang: 'el-GR' },
-  { id: 'he', name: 'Hebrew (עברית)', subtitle: 'Original Hebrew OT', flag: '🇮🇱', langPrefixes: ['he', 'iw', 'hebrew'], defaultLang: 'he-IL' }
+const AUDIO_SOURCES: AudioLanguageSource[] = [
+  { 
+    id: 'fil', 
+    name: 'Filipino / Tagalog', 
+    subtitle: 'Ang Dating Biblia (ADB) 1905', 
+    flag: '🇵🇭', 
+    code: 46 
+  },
+  { 
+    id: 'en', 
+    name: 'English', 
+    subtitle: 'King James Version (KJV)', 
+    flag: '🇺🇸', 
+    code: 1 
+  },
+  { 
+    id: 'orig', 
+    name: 'Orihinal na Wika', 
+    subtitle: 'Hebreo (Lumang Tipan) / Griyego (Bagong Tipan)', 
+    flag: '📜', 
+    code: 58, 
+    hebrewCode: 44 
+  },
+  { 
+    id: 'es', 
+    name: 'Español', 
+    subtitle: 'Reina Valera Spanish Audio', 
+    flag: '🇪🇸', 
+    code: 6 
+  },
+  { 
+    id: 'zh', 
+    name: '中文 (Mandarin)', 
+    subtitle: 'Chinese Audio Bible', 
+    flag: '🇨🇳', 
+    code: 4 
+  },
+  { 
+    id: 'ar', 
+    name: 'العربية (Arabic)', 
+    subtitle: 'Arabic Audio Bible', 
+    flag: '🇸🇦', 
+    code: 16 
+  }
 ];
+
+export function getChapterAudioUrl(sourceId: string, bookId: number, chapter: number): string {
+  let code = 46; // default Filipino ADB
+  if (sourceId === 'en') code = 1;
+  else if (sourceId === 'zh') code = 4;
+  else if (sourceId === 'ar') code = 16;
+  else if (sourceId === 'es') code = 6;
+  else if (sourceId === 'orig') {
+    // OT is Hebrew (44), NT is Greek (58)
+    code = bookId <= 39 ? 44 : 58;
+  }
+  return `https://www.wordproaudio.net/bibles/app/audio/${code}/${bookId}/${chapter}.mp3`;
+}
+
+function formatTime(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   book,
@@ -49,393 +111,235 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [rate, setRate] = useState<number>(1);
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  
-  // Default audio language: English for KJV, Filipino for ADB
-  const defaultSelectedLang = currentTranslation === 'kjv' ? 'en' : 'fil';
-  const [selectedLangId, setSelectedLangId] = useState<string>(defaultSelectedLang);
-  const [selectedDeviceVoiceURI, setSelectedDeviceVoiceURI] = useState<string | null>(null);
-  const [showVoiceMenu, setShowVoiceMenu] = useState<boolean>(false);
+  const [hasError, setHasError] = useState(false);
 
-  const synthRef = useRef<SpeechSynthesis | null>(null);
-  const voiceMenuRef = useRef<HTMLDivElement | null>(null);
-  const isPlayingRef = useRef<boolean>(false);
-  const currentVerseIdxRef = useRef<number>(activeVerseIndex);
-  const resumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const playTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Audio language selection
+  const defaultSelectedLang = currentTranslation === 'kjv' ? 'en' : (currentTranslation === 'orig' ? 'orig' : 'fil');
+  const [selectedSourceId, setSelectedSourceId] = useState<string>(defaultSelectedLang);
+  const [showDropdown, setShowDropdown] = useState<boolean>(false);
 
-  currentVerseIdxRef.current = activeVerseIndex;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const t = translations[lang] || translations.tl;
+  const currentAudioUrl = getChapterAudioUrl(selectedSourceId, book.id, chapter);
 
-  // Dismiss voice dropdown when clicking outside
+  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (voiceMenuRef.current && !voiceMenuRef.current.contains(e.target as Node)) {
-        setShowVoiceMenu(false);
+    const handleOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
       }
     };
-    if (showVoiceMenu) {
-      document.addEventListener('mousedown', handleOutsideClick);
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleOutside);
     }
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('mousedown', handleOutside);
     };
-  }, [showVoiceMenu]);
+  }, [showDropdown]);
 
-  // Preload system voices if supported
+  // Handle chapter or book change: load new track
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis;
+    if (audioRef.current) {
+      const wasPlaying = isPlaying;
+      audioRef.current.pause();
+      audioRef.current.src = currentAudioUrl;
+      audioRef.current.load();
+      setCurrentTime(0);
+      setDuration(0);
+      setHasError(false);
 
-      const updateVoices = () => {
-        if (!synthRef.current) return;
-        try {
-          const voices = synthRef.current.getVoices();
-          if (voices && voices.length > 0) {
-            setAvailableVoices(voices);
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      updateVoices();
-      if (synthRef.current.onvoiceschanged !== undefined) {
-        synthRef.current.onvoiceschanged = updateVoices;
-      }
-      setTimeout(updateVoices, 500);
-      setTimeout(updateVoices, 1500);
-    }
-
-    return () => {
-      stopAllAudio();
-    };
-  }, []);
-
-  // Stop when chapter or book changes
-  useEffect(() => {
-    stopAllAudio();
-    setIsPlaying(false);
-    isPlayingRef.current = false;
-  }, [book.id, chapter]);
-
-  const stopAllAudio = () => {
-    isPlayingRef.current = false;
-    setIsLoadingAudio(false);
-
-    if (playTimeoutRef.current) {
-      clearTimeout(playTimeoutRef.current);
-      playTimeoutRef.current = null;
-    }
-
-    if (resumeIntervalRef.current) {
-      clearInterval(resumeIntervalRef.current);
-      resumeIntervalRef.current = null;
-    }
-
-    if (synthRef.current) {
-      try {
-        synthRef.current.cancel();
-      } catch {
-        // ignore
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.__sbActiveUtterance = null;
-    }
-  };
-
-  // Find best matching voice for a language option
-  const findMatchingVoice = (langOption: LanguageVoiceOption): SpeechSynthesisVoice | null => {
-    if (!availableVoices.length) return null;
-    
-    // Exact or prefix match
-    for (const prefix of langOption.langPrefixes) {
-      const match = availableVoices.find(v => 
-        v.lang.toLowerCase().startsWith(prefix) || 
-        v.name.toLowerCase().includes(prefix)
-      );
-      if (match) return match;
-    }
-    return null;
-  };
-
-  // Get clean text to speak for the given verse
-  const getVerseTextToSpeak = (verseObj: Verse, langId: string): string => {
-    const cleanKjv = verseObj.kjv.replace(/<S>\d+<\/S>/g, '').trim();
-    const cleanOrig = verseObj.orig.replace(/<S>\d+<\/S>/g, '').trim();
-
-    switch (langId) {
-      case 'fil':
-        return `Talata ${verseObj.v}. ${verseObj.adb}`;
-      case 'en':
-        return `Verse ${verseObj.v}. ${cleanKjv}`;
-      case 'el':
-      case 'he':
-        return cleanOrig || `Verse ${verseObj.v}. ${cleanKjv}`;
-      case 'zh':
-        // If reading in Chinese voice, speak verse reference and message
-        return `第 ${verseObj.v} 节. ${cleanKjv}`;
-      case 'ar':
-        return `الآية ${verseObj.v}. ${cleanKjv}`;
-      case 'es':
-        return `Versículo ${verseObj.v}. ${cleanKjv}`;
-      default:
-        return `Talata ${verseObj.v}. ${verseObj.adb}`;
-    }
-  };
-
-  // Play verse using Web Speech API with Android keep-alive
-  const playVerse = (index: number) => {
-    if (index < 0 || index >= verses.length) {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      setIsLoadingAudio(false);
-      return;
-    }
-
-    if (!synthRef.current && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis;
-    }
-
-    if (!synthRef.current) {
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      return;
-    }
-
-    // Cancel prior audio and clear timers
-    if (playTimeoutRef.current) {
-      clearTimeout(playTimeoutRef.current);
-      playTimeoutRef.current = null;
-    }
-    if (resumeIntervalRef.current) {
-      clearInterval(resumeIntervalRef.current);
-      resumeIntervalRef.current = null;
-    }
-
-    try {
-      if (synthRef.current.paused) {
-        synthRef.current.resume();
-      }
-      synthRef.current.cancel();
-    } catch {
-      // ignore
-    }
-
-    isPlayingRef.current = true;
-    setIsPlaying(true);
-    setIsLoadingAudio(true);
-
-    const verseObj = verses[index];
-    const textToSpeak = getVerseTextToSpeak(verseObj, selectedLangId);
-    const selectedOption = LANGUAGE_OPTIONS.find(o => o.id === selectedLangId) || LANGUAGE_OPTIONS[0];
-
-    // Android Chrome WebView fix: slight timeout after cancel prevents immediate cancellation
-    playTimeoutRef.current = setTimeout(() => {
-      if (!isPlayingRef.current || !synthRef.current) return;
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.rate = rate;
-
-      // Assign voice
-      if (selectedDeviceVoiceURI) {
-        const devVoice = availableVoices.find(v => v.voiceURI === selectedDeviceVoiceURI);
-        if (devVoice) {
-          utterance.voice = devVoice;
-          utterance.lang = devVoice.lang;
-        }
-      } else {
-        const matched = findMatchingVoice(selectedOption);
-        if (matched) {
-          utterance.voice = matched;
-          utterance.lang = matched.lang;
-        } else {
-          utterance.lang = selectedOption.defaultLang;
-        }
-      }
-
-      // Save global reference to prevent Android garbage collection
-      if (typeof window !== 'undefined') {
-        window.__sbActiveUtterance = utterance;
-      }
-
-      utterance.onstart = () => {
-        setIsLoadingAudio(false);
-        // Android keep-alive: pulse resume every 8s to prevent Chrome sleep bug
-        if (resumeIntervalRef.current) clearInterval(resumeIntervalRef.current);
-        resumeIntervalRef.current = setInterval(() => {
-          if (synthRef.current && isPlayingRef.current) {
-            if (synthRef.current.speaking && !synthRef.current.paused) {
-              synthRef.current.pause();
-              synthRef.current.resume();
-            }
-          }
-        }, 8000);
-      };
-
-      utterance.onend = () => {
-        if (resumeIntervalRef.current) {
-          clearInterval(resumeIntervalRef.current);
-          resumeIntervalRef.current = null;
-        }
-        if (!isPlayingRef.current) return;
-
-        // Move to next verse automatically
-        if (index + 1 < verses.length) {
-          const nextIdx = index + 1;
-          onVerseChange(nextIdx);
-          playVerse(nextIdx);
-        } else {
-          isPlayingRef.current = false;
+      if (wasPlaying) {
+        audioRef.current.play().catch(() => {
           setIsPlaying(false);
-        }
-      };
-
-      utterance.onerror = (e: any) => {
-        if (resumeIntervalRef.current) {
-          clearInterval(resumeIntervalRef.current);
-          resumeIntervalRef.current = null;
-        }
-        setIsLoadingAudio(false);
-
-        // Ignore user cancellation or intentional skip
-        if (!isPlayingRef.current || e.error === 'canceled' || e.error === 'interrupted') {
-          return;
-        }
-
-        // If specific language failed, retry with system default voice
-        if (e.error === 'language-unavailable' || e.error === 'voice-unavailable') {
-          try {
-            const fallbackUtterance = new SpeechSynthesisUtterance(textToSpeak);
-            fallbackUtterance.rate = rate;
-            fallbackUtterance.onend = utterance.onend;
-            if (typeof window !== 'undefined') window.__sbActiveUtterance = fallbackUtterance;
-            synthRef.current?.speak(fallbackUtterance);
-            return;
-          } catch {
-            // ignore
-          }
-        }
-
-        isPlayingRef.current = false;
+        });
+      } else {
         setIsPlaying(false);
-      };
-
-      try {
-        synthRef.current.speak(utterance);
-      } catch (err) {
-        console.warn('Speech synthesis speak error:', err);
-        setIsPlaying(false);
-        isPlayingRef.current = false;
-        setIsLoadingAudio(false);
       }
-    }, 45);
-  };
+    }
+  }, [book.id, chapter, selectedSourceId]);
+
+  // Update playback speed
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    }
+  }, [rate]);
 
   const togglePlay = () => {
+    if (!audioRef.current) return;
+
     if (isPlaying) {
-      stopAllAudio();
+      audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      const startIdx = activeVerseIndex >= 0 ? activeVerseIndex : 0;
-      playVerse(startIdx);
-    }
-  };
-
-  const handleNextVerse = () => {
-    const nextIdx = (activeVerseIndex >= 0 ? activeVerseIndex : 0) + 1;
-    if (nextIdx < verses.length) {
-      onVerseChange(nextIdx);
-      if (isPlaying) {
-        playVerse(nextIdx);
+      setIsLoadingAudio(true);
+      setHasError(false);
+      if (!audioRef.current.src || audioRef.current.src === '') {
+        audioRef.current.src = currentAudioUrl;
       }
+      audioRef.current.play()
+        .then(() => {
+          setIsPlaying(true);
+          setIsLoadingAudio(false);
+        })
+        .catch(err => {
+          console.warn('Audio play failed:', err);
+          setIsPlaying(false);
+          setIsLoadingAudio(false);
+          setHasError(true);
+        });
     }
   };
 
-  const handlePrevVerse = () => {
-    const prevIdx = (activeVerseIndex >= 0 ? activeVerseIndex : 0) - 1;
-    if (prevIdx >= 0) {
-      onVerseChange(prevIdx);
-      if (isPlaying) {
-        playVerse(prevIdx);
-      }
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setCurrentTime(0);
     }
-  };
-
-  const stop = () => {
-    stopAllAudio();
     setIsPlaying(false);
   };
 
-  // Get display name of chosen language or voice
-  const getSelectedVoiceDisplayName = () => {
-    if (selectedDeviceVoiceURI) {
-      const found = availableVoices.find(v => v.voiceURI === selectedDeviceVoiceURI);
-      if (found) {
-        return found.name.split(' - ')[0].replace('Microsoft ', '').replace('Google ', '');
-      }
+  const seekForward = (seconds = 10) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.min(audioRef.current.currentTime + seconds, duration || 9999);
     }
-    const currentOpt = LANGUAGE_OPTIONS.find(o => o.id === selectedLangId);
-    return currentOpt ? `${currentOpt.flag} ${currentOpt.name.split(' ')[0]}` : t.audioTitle;
   };
 
+  const seekBackward = (seconds = 10) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(audioRef.current.currentTime - seconds, 0);
+    }
+  };
+
+  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setCurrentTime(val);
+    if (audioRef.current) {
+      audioRef.current.currentTime = val;
+    }
+  };
+
+  const activeSource = AUDIO_SOURCES.find(s => s.id === selectedSourceId) || AUDIO_SOURCES[0];
+  const downloadFileName = `${book.tagalog.replace(/\s+/g, '_')}_Kap_${chapter}_${activeSource.name.split('/')[0].trim()}.mp3`;
+
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      background: 'var(--bg-card)',
-      padding: '4px 8px',
-      borderRadius: 'var(--radius-full)',
-      border: '1px solid var(--border-subtle)',
-      fontSize: '0.8rem',
-      position: 'relative'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: isPlaying ? '#10b981' : 'var(--text-gold)', fontWeight: 600 }}>
+    <div 
+      className="suribibliya-audio-player"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        background: 'var(--bg-card)',
+        padding: '3px 8px',
+        borderRadius: 'var(--radius-full)',
+        border: isPlaying ? '1px solid #10b981' : '1px solid var(--border-subtle)',
+        fontSize: '0.78rem',
+        position: 'relative',
+        boxShadow: isPlaying ? '0 0 12px rgba(16, 185, 129, 0.2)' : 'none',
+        transition: 'border 0.2s, box-shadow 0.2s'
+      }}
+    >
+      {/* Hidden standard HTML5 audio element */}
+      <audio
+        ref={audioRef}
+        src={currentAudioUrl}
+        preload="metadata"
+        onLoadStart={() => setIsLoadingAudio(true)}
+        onCanPlay={() => setIsLoadingAudio(false)}
+        onWaiting={() => setIsLoadingAudio(true)}
+        onPlaying={() => {
+          setIsPlaying(true);
+          setIsLoadingAudio(false);
+          setHasError(false);
+        }}
+        onPause={() => setIsPlaying(false)}
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+          }
+        }}
+        onLoadedMetadata={() => {
+          if (audioRef.current) {
+            setDuration(audioRef.current.duration || 0);
+            setIsLoadingAudio(false);
+          }
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
+        onError={() => {
+          setIsLoadingAudio(false);
+          setIsPlaying(false);
+          setHasError(true);
+        }}
+      />
+
+      {/* Speaker Icon & Status */}
+      <div 
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '4px', 
+          color: isPlaying ? '#10b981' : 'var(--text-gold)', 
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}
+        onClick={togglePlay}
+        title={isPlaying ? 'I-pause ang Audio' : 'Pakinggan ang Kabanata'}
+      >
         {isLoadingAudio ? (
           <Loader2 size={15} className="search-spinner" />
         ) : (
-          <Volume2 size={15} style={{ animation: isPlaying ? 'pulse 1.5s infinite' : 'none' }} />
+          <Volume2 
+            size={15} 
+            style={{ 
+              animation: isPlaying ? 'pulse 1.5s infinite' : 'none',
+              filter: isPlaying ? 'drop-shadow(0 0 4px #10b981)' : 'none'
+            }} 
+          />
         )}
-        <span className="hide-on-mobile">{t.audioTitle}</span>
       </div>
 
-      {/* Voice / Language Dropdown Trigger */}
+      {/* Language / Source Dropdown Trigger */}
       <div style={{ position: 'relative' }}>
         <button
           type="button"
-          onClick={() => setShowVoiceMenu(!showVoiceMenu)}
+          onClick={() => setShowDropdown(!showDropdown)}
           style={{
             background: 'var(--bg-input)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-full)',
-            color: isPlaying ? '#10b981' : 'var(--text-secondary)',
+            color: isPlaying ? '#10b981' : 'var(--text-primary)',
             fontSize: '0.72rem',
-            padding: '3px 8px',
+            padding: '2px 7px',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
             cursor: 'pointer',
-            maxWidth: '145px',
+            maxWidth: '125px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             fontWeight: 600
           }}
-          title={getSelectedVoiceDisplayName()}
+          title={`Wika: ${activeSource.name}`}
         >
-          <span>{getSelectedVoiceDisplayName()}</span>
+          <span>{activeSource.flag} {activeSource.name.split('/')[0].trim()}</span>
           <ChevronDown size={11} />
         </button>
 
-        {showVoiceMenu && (
-          <div 
-            ref={voiceMenuRef}
-            className="voice-menu-dropdown"
+        {/* Dropdown Menu */}
+        {showDropdown && (
+          <div
+            ref={dropdownRef}
+            className="audio-dropdown-panel"
             style={{
               position: 'absolute',
               top: '100%',
@@ -444,161 +348,181 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               background: 'var(--bg-card)',
               border: '1px solid var(--border-medium)',
               borderRadius: 'var(--radius-md)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-              padding: '6px',
-              zIndex: 2000,
-              minWidth: '240px',
-              maxHeight: '340px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.65)',
+              padding: '8px',
+              zIndex: 3000,
+              minWidth: '270px',
+              maxHeight: '380px',
               overflowY: 'auto'
             }}
           >
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-gold)', padding: '4px 8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              {lang === 'en' ? 'Select Audio Language:' : 'Pumili ng Wika / Boses:'}
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-gold)', padding: '2px 6px 6px 6px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Pumili ng Boses / Audio Bible:
             </div>
 
-            {/* Standard Languages (Filipino, English, Chinese, Arabic, Spanish, Greek, Hebrew) */}
-            {LANGUAGE_OPTIONS.map(opt => {
-              const isSelected = selectedLangId === opt.id && !selectedDeviceVoiceURI;
+            {/* Language Options */}
+            {AUDIO_SOURCES.map(source => {
+              const isSelected = selectedSourceId === source.id;
               return (
                 <button
-                  key={opt.id}
+                  key={source.id}
                   type="button"
                   onClick={() => {
-                    const wasPlaying = isPlaying;
-                    stopAllAudio();
-                    setSelectedLangId(opt.id);
-                    setSelectedDeviceVoiceURI(null);
-                    setShowVoiceMenu(false);
-                    if (wasPlaying) {
-                      playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
-                    }
+                    setSelectedSourceId(source.id);
+                    setShowDropdown(false);
                   }}
                   style={{
                     width: '100%',
                     textAlign: 'left',
-                    padding: '7px 10px',
+                    padding: '6px 8px',
                     background: isSelected ? 'var(--accent-gold-glow)' : 'transparent',
                     color: isSelected ? 'var(--accent-gold)' : 'var(--text-primary)',
                     border: 'none',
                     borderRadius: 'var(--radius-sm)',
-                    fontSize: '0.75rem',
+                    fontSize: '0.74rem',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    marginBottom: '2px'
+                    marginBottom: '3px'
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 700 }}>{opt.flag} {opt.name}</div>
-                    <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>{opt.subtitle}</div>
+                    <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>{source.flag}</span>
+                      <span>{source.name}</span>
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {source.subtitle}
+                    </div>
                   </div>
-                  {isSelected && <span style={{ color: 'var(--accent-gold)', fontWeight: 700 }}>✓</span>}
+                  {isSelected && <Check size={14} style={{ color: 'var(--accent-gold)' }} />}
                 </button>
               );
             })}
 
-            {/* Device-installed system voices */}
-            {availableVoices.length > 0 && (
-              <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '6px 0 4px 0', paddingTop: '4px' }}>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', padding: '2px 8px' }}>
-                  {lang === 'en' ? 'Device Offline Voices:' : 'Mga Boses sa Device:'}
-                </div>
-                {availableVoices.slice(0, 8).map(v => {
-                  const isSelected = selectedDeviceVoiceURI === v.voiceURI;
-                  return (
-                    <button
-                      key={v.voiceURI}
-                      type="button"
-                      onClick={() => {
-                        const wasPlaying = isPlaying;
-                        stopAllAudio();
-                        setSelectedDeviceVoiceURI(v.voiceURI);
-                        setShowVoiceMenu(false);
-                        if (wasPlaying) {
-                          playVerse(activeVerseIndex >= 0 ? activeVerseIndex : 0);
-                        }
-                      }}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '5px 8px',
-                        background: isSelected ? 'var(--accent-gold-glow)' : 'transparent',
-                        color: isSelected ? 'var(--accent-gold)' : 'var(--text-secondary)',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.7rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}
-                    >
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontWeight: isSelected ? 700 : 500 }}>{v.name.replace(/Microsoft |Google /g, '')}</span>
-                        <span style={{ fontSize: '0.63rem', color: 'var(--text-muted)', marginLeft: '4px' }}>({v.lang})</span>
-                      </div>
-                      {isSelected && <span style={{ color: 'var(--accent-gold)' }}>✓</span>}
-                    </button>
-                  );
-                })}
+            {/* Download MP3 Option in Dropdown */}
+            <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: '6px', paddingTop: '6px' }}>
+              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', padding: '2px 6px 4px 6px' }}>
+                Offline Listening:
               </div>
-            )}
+              <a
+                href={currentAudioUrl}
+                download={downloadFileName}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  width: '100%',
+                  padding: '7px 8px',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-gold)',
+                  textDecoration: 'none',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  boxSizing: 'border-box'
+                }}
+                onClick={() => setShowDropdown(false)}
+                title="I-download ang MP3 audio file para pakinggan kahit walang internet"
+              >
+                <Download size={13} />
+                <span>I-download ang MP3 ({book.tagalog} {chapter})</span>
+              </a>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Verse navigation: Previous */}
+      {/* Skip backward 10s */}
       <button
         type="button"
-        onClick={handlePrevVerse}
+        onClick={() => seekBackward(10)}
         className="action-icon-btn"
-        style={{ width: '22px', height: '22px' }}
-        title="Nakaraang talata"
-        disabled={activeVerseIndex <= 0}
+        style={{ width: '20px', height: '20px' }}
+        title="I-atras ng 10 segundo (-10s)"
       >
-        <SkipBack size={12} />
+        <RotateCcw size={11} />
       </button>
 
-      {/* Play/Pause Button */}
+      {/* Main Play / Pause Button */}
       <button
         type="button"
         onClick={togglePlay}
         className="action-icon-btn"
         style={{
-          background: isPlaying ? 'var(--accent-gold)' : 'var(--bg-input)',
-          color: isPlaying ? '#000' : 'var(--text-gold)',
+          background: isPlaying ? '#10b981' : 'var(--accent-gold)',
+          color: isPlaying ? '#ffffff' : '#000000',
           width: '26px',
-          height: '26px'
+          height: '26px',
+          borderRadius: '50%',
+          boxShadow: isPlaying ? '0 0 8px rgba(16, 185, 129, 0.4)' : 'none'
         }}
-        title={isPlaying ? t.pauseAudio : t.playChapter}
+        title={isPlaying ? 'I-pause ang Audio' : 'Pakinggan ang Kabanata'}
       >
         {isPlaying ? <Pause size={13} /> : <Play size={13} style={{ marginLeft: '1px' }} />}
       </button>
 
-      {/* Verse navigation: Next */}
+      {/* Skip forward 10s */}
       <button
         type="button"
-        onClick={handleNextVerse}
+        onClick={() => seekForward(10)}
         className="action-icon-btn"
-        style={{ width: '22px', height: '22px' }}
-        title="Susunod na talata"
-        disabled={activeVerseIndex >= verses.length - 1}
+        style={{ width: '20px', height: '20px' }}
+        title="I-abante ng 10 segundo (+10s)"
       >
-        <SkipForward size={12} />
+        <RotateCw size={11} />
       </button>
 
-      {isPlaying && (
+      {/* Stop Button (visible while playing or paused past 0) */}
+      {(isPlaying || currentTime > 0) && (
         <button
           type="button"
-          onClick={stop}
+          onClick={stopAudio}
           className="action-icon-btn"
-          style={{ width: '22px', height: '22px' }}
-          title={t.stopAudio}
+          style={{ width: '20px', height: '20px' }}
+          title="Itigil ang audio"
         >
-          <Square size={11} />
+          <Square size={10} />
         </button>
       )}
+
+      {/* Scrubbing Bar & Time Display */}
+      <div 
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '5px' 
+        }}
+      >
+        <input
+          type="range"
+          min={0}
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleSeekChange}
+          style={{
+            width: '60px',
+            height: '4px',
+            accentColor: isPlaying ? '#10b981' : 'var(--accent-gold)',
+            cursor: 'pointer'
+          }}
+          title={`Oras: ${formatTime(currentTime)} / ${formatTime(duration)}`}
+        />
+        <span 
+          style={{ 
+            fontSize: '0.67rem', 
+            color: isPlaying ? '#10b981' : 'var(--text-muted)', 
+            fontVariantNumeric: 'tabular-nums',
+            minWidth: '56px' 
+          }}
+        >
+          {formatTime(currentTime)}/{formatTime(duration)}
+        </span>
+      </div>
 
       {/* Speed Rate Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
@@ -608,8 +532,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             type="button"
             onClick={() => setRate(r)}
             style={{
-              padding: '1px 4px',
-              fontSize: '0.64rem',
+              padding: '1px 3px',
+              fontSize: '0.62rem',
               borderRadius: '3px',
               background: rate === r ? 'var(--accent-gold-glow)' : 'transparent',
               color: rate === r ? 'var(--accent-gold)' : 'var(--text-muted)',
@@ -621,6 +545,41 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           </button>
         ))}
       </div>
+
+      {/* Direct Download Icon Button */}
+      <a
+        href={currentAudioUrl}
+        download={downloadFileName}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="action-icon-btn"
+        style={{ 
+          width: '22px', 
+          height: '22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textDecoration: 'none',
+          color: 'var(--text-gold)'
+        }}
+        title={`I-download ang MP3 ng ${book.tagalog} ${chapter} para sa offline`}
+      >
+        <Download size={12} />
+      </a>
+
+      {/* Offline/Error notice */}
+      {hasError && (
+        <span 
+          style={{ 
+            color: '#ef4444', 
+            fontSize: '0.65rem', 
+            marginLeft: '4px' 
+          }}
+          title="Kailangan ng koneksyon sa internet o i-download ang MP3 audio"
+        >
+          Offline (I-download ang MP3)
+        </span>
+      )}
     </div>
   );
 };

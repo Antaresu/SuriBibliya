@@ -32,11 +32,17 @@ export const StrongsModal: React.FC<StrongsModalProps> = ({ strongsKey, isGreekH
     : (isGreek ? 'G' : 'H') + strongsKey;
 
   const playPronunciation = () => {
-    if ('speechSynthesis' in window && entry?.pron) {
-      const utterance = new SpeechSynthesisUtterance(entry.pron);
-      utterance.lang = isGreek ? 'el-GR' : 'he-IL';
-      utterance.rate = 0.8;
-      window.speechSynthesis.speak(utterance);
+    const textToSpeak = entry?.pron || entry?.xlit || entry?.lemma;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && textToSpeak) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = isGreek ? 'el-GR' : 'he-IL';
+        utterance.rate = 0.8;
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -90,7 +96,7 @@ export const StrongsModal: React.FC<StrongsModalProps> = ({ strongsKey, isGreekH
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Bigkas (Pronunciation):</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
                     <span style={{ fontStyle: 'italic', color: 'var(--text-gold)', fontWeight: 600 }}>
-                      {entry.pron || 'N/A'}
+                      {entry.pron || entry.xlit || entry.lemma}
                     </span>
                     <button 
                       onClick={playPronunciation} 
